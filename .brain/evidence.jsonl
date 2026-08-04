@@ -1,0 +1,1 @@
+{"date":"2026-08-04","task":"t-1","summary":"v0.1.0 首版:宪法+SessionStart hook+协议skill+安装器+doctor,本机实装","files":["install.sh","doctor.sh","hooks/session-start.sh","skill/project-brains/SKILL.md","constitution/global-directives.md"],"verify":"bash doctor.sh","exit":0,"risks":"pi-agent 是否读 AGENTS.md 未实测;codex 无 hook 靠宪法软约束;hook 仅对新会话生效","commit":"d1c3954"}
