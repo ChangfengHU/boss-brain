@@ -39,10 +39,16 @@ cp "$SRC/hooks/session-start.sh" "$HOME/.project-brains/hooks/session-start.sh"
 chmod +x "$HOME/.project-brains/hooks/session-start.sh"
 echo "$VERSION" > "$HOME/.project-brains/version"
 
+install_commands() { # $1=commands dir
+  mkdir -p "$1"
+  cp "$SRC/commands/handoff.md" "$SRC/commands/takeover.md" "$1/"
+}
+
 # ---------- Claude Code ----------
 if [ -d "$HOME/.claude" ]; then
   merge_block "$HOME/.claude/CLAUDE.md"
   install_skill "$HOME/.claude/skills"
+  install_commands "$HOME/.claude/commands"
   python3 - "$HOME/.claude/settings.json" "$HOME/.project-brains/hooks/session-start.sh" <<'PY'
 import json, sys, os
 path, hook_cmd = sys.argv[1], sys.argv[2]
@@ -59,7 +65,7 @@ if not any(h.get("command") == hook_cmd
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
 PY
-  REPORT+=("claude   : 宪法 ~/.claude/CLAUDE.md | skill | SessionStart hook  [完整]")
+  REPORT+=("claude   : 宪法 ~/.claude/CLAUDE.md | skill | SessionStart hook | /handoff /takeover  [完整]")
 else
   REPORT+=("claude   : 未检测到,跳过")
 fi
@@ -68,7 +74,8 @@ fi
 if [ -d "$HOME/.codex" ]; then
   merge_block "$HOME/.codex/AGENTS.md"
   install_skill "$HOME/.codex/skills"
-  REPORT+=("codex    : 宪法 ~/.codex/AGENTS.md | skill  [降级: 无 hook,收工纪律靠宪法]")
+  install_commands "$HOME/.codex/prompts"
+  REPORT+=("codex    : 宪法 ~/.codex/AGENTS.md | skill | /handoff /takeover  [降级: 无 hook,收工纪律靠宪法]")
 else
   REPORT+=("codex    : 未检测到,跳过")
 fi

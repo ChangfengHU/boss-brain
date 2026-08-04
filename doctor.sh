@@ -41,6 +41,12 @@ check_tool "codex"    "$HOME/.codex/AGENTS.md"            "$HOME/.codex/skills"
 check_tool "opencode" "$HOME/.config/opencode/AGENTS.md"  "$HOME/.config/opencode/skills"
 check_tool "pi-agent" "$HOME/.pi/agent/AGENTS.md"         "$HOME/.pi/agent/skills"
 
+# commands
+[ -f "$HOME/.claude/commands/handoff.md" ] && [ -f "$HOME/.claude/commands/takeover.md" ] \
+  && ok "claude: /handoff /takeover 命令已安装" || bad "claude: 命令缺失"
+[ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/takeover.md" ] \
+  && ok "codex: /handoff /takeover 命令已安装" || bad "codex: 命令缺失"; }
+
 # claude hook registration
 if [ -f "$HOME/.claude/settings.json" ]; then
   python3 -c '

@@ -21,6 +21,11 @@ bash doctor.sh    # 逐项 PASS/FAIL
 
 升级 = git pull 后重跑 install.sh(managed block 原地替换,不碰用户自己的内容)。
 
+## 两个命令(Claude Code `/xxx`,Codex `/prompts` 同名)
+
+- **`/handoff` 交接**:确定要交接时手动执行——逐项校验交接文档质量(完整性、快照污染、验证命令实跑、状态一致、无密钥明文),能修的当场修,最后 commit+push 并给出"交接就绪/未就绪"结论。
+- **`/takeover` 接手**:新 agent 首次进项目时手动执行一次——把 HANDOFF、密钥位置、规范、任务状态完整加载进上下文,实跑验证命令,修正漂移,汇报接管结果。此包信息**不随会话自动加载**(区别于宪法),之后仅在自己需要时重新执行。
+
 ## 核心规则(细节见 skill/project-brains/SKILL.md)
 
 - 会话开始未绑定工作空间(如在 home 根目录)→ 先问开发哪个项目:已登记项目 / 本地目录 / GitHub 仓库(clone 到 `~/projects/`),**不默认当前目录**。
