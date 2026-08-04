@@ -15,9 +15,15 @@
 ## 安装 / 验证 / 升级
 
 ```bash
+# 任何机器一键安装(公网,SHA256 校验,零凭据):
+bash <(curl -fsSL "https://skill.vyibc.com/install-project-brains.sh")
+
+# 或从仓库本地安装:
 bash install.sh   # 幂等;探测到哪个工具装哪个,打印各工具能力档位
 bash doctor.sh    # 逐项 PASS/FAIL
 ```
+
+发布新版本: `bash scripts/release.sh`(需 R2 上传凭据;产物落 R2 + `releases/current/`,git 为持久权威)。
 
 升级 = git pull 后重跑 install.sh(managed block 原地替换,不碰用户自己的内容)。
 
