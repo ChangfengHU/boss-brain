@@ -49,12 +49,12 @@ check_tool "opencode" "$HOME/.config/opencode/AGENTS.md"  "$HOME/.config/opencod
 check_tool "pi-agent" "$HOME/.pi/agent/AGENTS.md"         "$HOME/.pi/agent/skills"
 
 # commands
-for c in handoff takeover brain-init; do
+for c in handoff takeover brain-init handoff-show; do
   [ -f "$HOME/.claude/commands/$c.md" ] || { bad "claude: 命令 $c 缺失"; continue; }
 done
-[ -f "$HOME/.claude/commands/brain-init.md" ] && ok "claude: /handoff /takeover /brain-init 命令已安装"
-[ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/brain-init.md" ] \
-  && ok "codex: 三命令已安装" || bad "codex: 命令缺失"; }
+[ -f "$HOME/.claude/commands/handoff-show.md" ] && ok "claude: 四命令已安装(handoff/takeover/brain-init/handoff-show)"
+[ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/handoff-show.md" ] \
+  && ok "codex: 四命令已安装" || bad "codex: 命令缺失"; }
 
 # stop hook behavior (4 deterministic cases)
 sh="$HOME/.project-brains/hooks/stop-evidence-check.sh"
