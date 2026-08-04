@@ -23,9 +23,15 @@ fi
 if [ -n "$brain_dir" ]; then
   echo "[project-brains] 工作空间: $CWD (已有 brain)"
   if [ -f "$brain_dir/TASKS.md" ]; then
-    active="$(grep -c ' active' "$brain_dir/TASKS.md" 2>/dev/null || echo 0)"
+    # Two supported formats: markdown checkbox "- [ ] ..." and status suffix "... active".
+    if grep -q '^- \[ \]' "$brain_dir/TASKS.md" 2>/dev/null; then
+      pattern='^- \[ \]'
+    else
+      pattern=' active$'
+    fi
+    active="$(grep -cE "$pattern" "$brain_dir/TASKS.md" 2>/dev/null || echo 0)"
     echo "活跃任务 ${active} 个 (.brain/TASKS.md):"
-    grep ' active' "$brain_dir/TASKS.md" 2>/dev/null | head -10
+    grep -E "$pattern" "$brain_dir/TASKS.md" 2>/dev/null | head -10
     if [ "${active:-0}" -gt 1 ]; then
       echo "提示: 多个活跃任务。用户只说\"继续\"时,列出清单让用户选,不要自动挑。"
     fi

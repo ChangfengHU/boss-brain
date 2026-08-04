@@ -26,6 +26,13 @@ echo "$out" | grep -q '已有 brain' && echo "$out" | grep -q '不要自动挑' 
   && ok "hook: 有 brain + 多活跃任务 → 加载并提示选择" || bad "hook: brain 分支异常"
 rm -rf "$tmp"
 
+tmp="$(mktemp -d)"; mkdir -p "$tmp/.brain"
+printf -- '- [ ] 待办一\n- [ ] 待办二\n- [x] 已完成的 active focus 段落\n' > "$tmp/.brain/TASKS.md"
+out="$(printf '{"cwd":"%s"}' "$tmp" | "$HOME/.project-brains/hooks/session-start.sh" 2>/dev/null)"
+echo "$out" | grep -q '活跃任务 2 个' && ! echo "$out" | grep -q '已完成的' \
+  && ok "hook: checkbox 格式任务解析正确(不误匹配 active 字样)" || bad "hook: checkbox 格式解析错误"
+rm -rf "$tmp"
+
 # per tool
 check_tool() { # $1=label $2=config $3=skills_dir(optional "")
   local label="$1" cfg="$2" skills="$3"
