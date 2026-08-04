@@ -49,19 +49,47 @@ check_tool "opencode" "$HOME/.config/opencode/AGENTS.md"  "$HOME/.config/opencod
 check_tool "pi-agent" "$HOME/.pi/agent/AGENTS.md"         "$HOME/.pi/agent/skills"
 
 # commands
-[ -f "$HOME/.claude/commands/handoff.md" ] && [ -f "$HOME/.claude/commands/takeover.md" ] \
-  && ok "claude: /handoff /takeover 命令已安装" || bad "claude: 命令缺失"
-[ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/takeover.md" ] \
-  && ok "codex: /handoff /takeover 命令已安装" || bad "codex: 命令缺失"; }
+for c in handoff takeover brain-init; do
+  [ -f "$HOME/.claude/commands/$c.md" ] || { bad "claude: 命令 $c 缺失"; continue; }
+done
+[ -f "$HOME/.claude/commands/brain-init.md" ] && ok "claude: /handoff /takeover /brain-init 命令已安装"
+[ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/brain-init.md" ] \
+  && ok "codex: 三命令已安装" || bad "codex: 命令缺失"; }
+
+# stop hook behavior (4 deterministic cases)
+sh="$HOME/.project-brains/hooks/stop-evidence-check.sh"
+if [ -x "$sh" ]; then
+  tr="$(mktemp -d)"; ( cd "$tr" && git init -q -b main && git config user.email t@t && git config user.name t \
+    && mkdir .brain && echo x > f && git add f && git commit -q -m t )
+  o1="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
+  printf '%s' "$o1" | grep -q '"decision": *"block"' && ok "stop-hook: 有 commit 无证据 → block" || bad "stop-hook: 未拦截"
+  sleep 1; echo '{}' > "$tr/.brain/evidence.jsonl"
+  o2="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
+  [ -z "$o2" ] && ok "stop-hook: 证据已落 → 放行" || bad "stop-hook: 误拦截"
+  o3="$(printf '{"cwd":"%s","stop_hook_active":true}' "$tr" | "$sh")"
+  [ -z "$o3" ] && ok "stop-hook: stop_hook_active → 防循环放行" || bad "stop-hook: 循环风险"
+  rm -rf "$tr"
+else
+  bad "stop-hook: 脚本缺失"
+fi
+
+# vault tooling
+[ -x "$HOME/.project-brains/vault.sh" ] && ok "vault: 工具已就位" || bad "vault: 工具缺失"
+
+# pi extension
+[ ! -d "$HOME/.pi/agent" ] || { [ -f "$HOME/.pi/agent/extensions/project-brains.ts" ] \
+  && ok "pi-agent: TS extension 已安装" || bad "pi-agent: extension 缺失"; }
 
 # claude hook registration
 if [ -f "$HOME/.claude/settings.json" ]; then
-  python3 -c '
+  for ev in SessionStart Stop; do
+    python3 -c '
 import json,sys,os
 cfg=json.load(open(os.path.expanduser("~/.claude/settings.json")))
-cmds=[h.get("command","") for e in cfg.get("hooks",{}).get("SessionStart",[]) for h in e.get("hooks",[])]
-sys.exit(0 if any("project-brains" in c for c in cmds) else 1)' \
-    && ok "claude: SessionStart hook 已注册" || bad "claude: SessionStart hook 未注册"
+cmds=[h.get("command","") for e in cfg.get("hooks",{}).get(sys.argv[1],[]) for h in e.get("hooks",[])]
+sys.exit(0 if any("project-brains" in c for c in cmds) else 1)' "$ev" \
+      && ok "claude: $ev hook 已注册" || bad "claude: $ev hook 未注册"
+  done
 fi
 
 exit $FAIL

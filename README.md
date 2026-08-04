@@ -42,19 +42,29 @@ bash doctor.sh    # 逐项 PASS/FAIL
 - 多任务:每任务独立记录文件,并发会话零冲突;"继续"有歧义时列清单让用户选。
 - `.brain-home` 指针:brain 托管在别处的项目(如 suqu 各业务仓库 → suqu-control-plane),记录写归属地,不重复建脑。
 
-## 能力档位(v0.1.0 实况)
+## 能力档位(v0.3.0 实况)
 
-| 工具 | 宪法 | hook 强制 | skill |
-|---|---|---|---|
-| Claude Code | ✅ | ✅ SessionStart | ✅ |
-| Codex | ✅ | ❌(prelude 兜底) | ✅ |
-| OpenCode | ✅(检测到才装) | 路线图(JS 插件) | ✅ |
-| pi-agent | ✅(AGENTS.md 加载待实测) | 路线图(TS extension) | ✅ |
+| 工具 | 宪法 | 开场注入 | 收工强制 | 命令 | skill |
+|---|---|---|---|---|---|
+| Claude Code | ✅ | ✅ SessionStart hook | ✅ Stop hook(有 commit 无证据即拦截) | ✅ 三命令 | ✅ |
+| Codex | ✅ | prelude(宪法) | 宪法软约束 | ✅ prompts 三命令 | ✅ |
+| pi-agent | ✅ | ✅ TS extension(严格类型检查过;TUI 实跑待验) | 宪法软约束 | skill 流程触发 | ✅ |
+| OpenCode | ✅(检测到才装) | 宪法 | 宪法软约束 | skill 流程触发 | ✅ |
+| Gemini CLI | ✅ | 宪法 | 宪法软约束 | — | — |
 
-## 路线图
+## 密钥保险库(vault)
 
-1. Stop hook:收工证据检查的硬强制(现靠宪法软约束)。
-2. CF 密钥保险库:密文存 R2,口令自举,新机器自动恢复(独立阶段)。
-3. pi TS extension / OpenCode JS 插件:补齐两家的 hook 档位。
-4. 行为探针评测(probes/):每条宪法条款一个探针,无头模式跑通过率。
-5. 接入 publish-skill 流水线:zip + SHA256 一键安装脚本分发。
+`scripts/vault.sh push|pull|status`:密文(AES-256-CBC + PBKDF2 60 万次迭代)存 R2,
+口令只在用户脑中,pull 自动恢复 700/600 权限。已通过端到端测试:往返一致、错口令拒绝、
+密文不含明文、SHA 校验。项目在 HANDOFF 或 `secrets/VAULT.md` 里记 vault URL 即接入。
+
+## 行为探针(probes/)
+
+`bash probes/run.sh [重复次数]`:每条不可硬强制的宪法条款一个无头探针
+(先陈述假设 / 直接指出漏洞不奉承 / 未绑定工作空间先问项目),中立目录运行,按输出判分。
+
+## 路线图(剩余)
+
+1. OpenCode JS 插件(本机未装该工具,无法验证,暂不发未测代码)。
+2. pi extension 的 TUI 实跑验收(需要真实 pi 会话,用户侧一次即可)。
+3. 真实秘钥入库(vault 已就绪,等用户定一次口令执行 push)。

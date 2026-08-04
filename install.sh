@@ -35,13 +35,15 @@ install_skill() { # $1=skills dir
 # ---------- shared runtime dir ----------
 mkdir -p "$HOME/.project-brains/hooks"
 touch "$HOME/.project-brains/registry.tsv"
-cp "$SRC/hooks/session-start.sh" "$HOME/.project-brains/hooks/session-start.sh"
-chmod +x "$HOME/.project-brains/hooks/session-start.sh"
+cp "$SRC/hooks/session-start.sh" "$SRC/hooks/stop-evidence-check.sh" "$HOME/.project-brains/hooks/"
+chmod +x "$HOME/.project-brains/hooks/"*.sh
+cp "$SRC/scripts/vault.sh" "$HOME/.project-brains/vault.sh"
+chmod +x "$HOME/.project-brains/vault.sh"
 echo "$VERSION" > "$HOME/.project-brains/version"
 
 install_commands() { # $1=commands dir
   mkdir -p "$1"
-  cp "$SRC/commands/handoff.md" "$SRC/commands/takeover.md" "$1/"
+  cp "$SRC/commands/"*.md "$1/"
 }
 
 # ---------- Claude Code ----------
@@ -49,23 +51,25 @@ if [ -d "$HOME/.claude" ]; then
   merge_block "$HOME/.claude/CLAUDE.md"
   install_skill "$HOME/.claude/skills"
   install_commands "$HOME/.claude/commands"
-  python3 - "$HOME/.claude/settings.json" "$HOME/.project-brains/hooks/session-start.sh" <<'PY'
+  python3 - "$HOME/.claude/settings.json" "$HOME/.project-brains/hooks" <<'PY'
 import json, sys, os
-path, hook_cmd = sys.argv[1], sys.argv[2]
+path, hookdir = sys.argv[1], sys.argv[2]
 cfg = {}
 if os.path.exists(path):
     with open(path) as f:
         cfg = json.load(f)
 hooks = cfg.setdefault("hooks", {})
-entries = hooks.setdefault("SessionStart", [])
-ours = {"hooks": [{"type": "command", "command": hook_cmd}]}
-if not any(h.get("command") == hook_cmd
-           for e in entries for h in e.get("hooks", [])):
-    entries.append(ours)
+for event, script in [("SessionStart", "session-start.sh"),
+                      ("Stop", "stop-evidence-check.sh")]:
+    entries = hooks.setdefault(event, [])
+    cmd = os.path.join(hookdir, script)
+    if not any(h.get("command") == cmd
+               for e in entries for h in e.get("hooks", [])):
+        entries.append({"hooks": [{"type": "command", "command": cmd}]})
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
 PY
-  REPORT+=("claude   : 宪法 ~/.claude/CLAUDE.md | skill | SessionStart hook | /handoff /takeover  [完整]")
+  REPORT+=("claude   : 宪法 | skill | SessionStart+Stop hooks | /handoff /takeover /brain-init  [完整]")
 else
   REPORT+=("claude   : 未检测到,跳过")
 fi
@@ -93,7 +97,9 @@ fi
 if [ -d "$HOME/.pi/agent" ]; then
   merge_block "$HOME/.pi/agent/AGENTS.md"
   install_skill "$HOME/.pi/agent/skills"
-  REPORT+=("pi-agent : 宪法 ~/.pi/agent/AGENTS.md | skill  [降级: TS extension 在路线图;AGENTS.md 加载待实测]")
+  mkdir -p "$HOME/.pi/agent/extensions"
+  cp "$SRC/pi/project-brains.ts" "$HOME/.pi/agent/extensions/project-brains.ts"
+  REPORT+=("pi-agent : 宪法 | skill | TS extension(session_start+before_agent_start)  [注入完整;严格类型检查通过,TUI 实跑待用户验证]")
 else
   REPORT+=("pi-agent : 未检测到,跳过")
 fi
