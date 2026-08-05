@@ -55,6 +55,11 @@ done
 [ -f "$HOME/.claude/commands/handoff-show.md" ] && ok "claude: 四命令已安装(handoff/takeover/brain-init/handoff-show)"
 [ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/handoff-show.md" ] \
   && ok "codex: 四命令已安装" || bad "codex: 命令缺失"; }
+for sd in "$HOME/.codex/skills" "$HOME/.config/opencode/skills"; do
+  [ -d "$(dirname "$sd")" ] || continue
+  miss=0; for c in brain-init takeover handoff handoff-show; do [ -f "$sd/$c/SKILL.md" ] || miss=1; done
+  [ "$miss" -eq 0 ] && ok "$(basename "$(dirname "$sd")"): 四命令 skill 形态已安装" || bad "$(basename "$(dirname "$sd")"): 命令 skill 缺失"
+done
 
 # stop hook behavior (4 deterministic cases)
 sh="$HOME/.project-brains/hooks/stop-evidence-check.sh"

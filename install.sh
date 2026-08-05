@@ -46,6 +46,19 @@ install_commands() { # $1=commands dir
   cp "$SRC/commands/"*.md "$1/"
 }
 
+install_cmd_skills() { # $1=skills dir; 四命令各发布为独立 skill(紧凑显示,可被模型按需触发)
+  local c n desc
+  for c in "$SRC/commands/"*.md; do
+    n="$(basename "$c" .md)"
+    desc="$(grep -m1 '^description:' "$c" | cut -d' ' -f2-)"
+    mkdir -p "$1/$n"
+    {
+      printf -- '---\nname: %s\ndescription: %s Use when the user explicitly asks for %s or the equivalent Chinese trigger.\n---\n\n' "$n" "$desc" "$n"
+      awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{f=0;next} !f' "$c"
+    } > "$1/$n/SKILL.md"
+  done
+}
+
 # ---------- Claude Code ----------
 if [ -d "$HOME/.claude" ]; then
   merge_block "$HOME/.claude/CLAUDE.md"
@@ -78,6 +91,7 @@ fi
 if [ -d "$HOME/.codex" ]; then
   merge_block "$HOME/.codex/AGENTS.md"
   install_skill "$HOME/.codex/skills"
+  install_cmd_skills "$HOME/.codex/skills"
   install_commands "$HOME/.codex/prompts"
   REPORT+=("codex    : 宪法 ~/.codex/AGENTS.md | skill | /handoff /takeover  [降级: 无 hook,收工纪律靠宪法]")
 else
@@ -88,6 +102,7 @@ fi
 if command -v opencode >/dev/null 2>&1 || [ -d "$HOME/.config/opencode" ]; then
   merge_block "$HOME/.config/opencode/AGENTS.md"
   install_skill "$HOME/.config/opencode/skills"
+  install_cmd_skills "$HOME/.config/opencode/skills"
   REPORT+=("opencode : 宪法 ~/.config/opencode/AGENTS.md | skill  [降级: JS 插件 hook 在路线图]")
 else
   REPORT+=("opencode : 未检测到,跳过(安装后重跑本脚本)")
