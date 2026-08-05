@@ -16,10 +16,22 @@ DOMAIN="https://skill.vyibc.com"
 
 # 1. Stage distributable content (no .git, no .brain, no releases)
 mkdir -p "$TMP/project-brains"
-for f in README.md VERSION install.sh doctor.sh constitution skill hooks commands; do
+for f in README.md VERSION install.sh doctor.sh constitution skill hooks commands scripts pi probes; do
   cp -r "$SRC/$f" "$TMP/project-brains/"
 done
 ( cd "$TMP" && zip -qr "$NAME.zip" project-brains )
+
+# 1.5 Self-test: install from the staged payload into a throwaway HOME.
+# Catches "install.sh references a file the zip doesn't ship" before publishing.
+FAKEHOME="$(mktemp -d)"
+if ! HOME="$FAKEHOME" bash "$TMP/project-brains/install.sh" >/dev/null 2>&1; then
+  echo "ABORT: staged payload failed self-install (missing file in whitelist?)" >&2
+  HOME="$FAKEHOME" bash "$TMP/project-brains/install.sh" 2>&1 | tail -5 >&2
+  rm -rf "$FAKEHOME"; exit 1
+fi
+[ -x "$FAKEHOME/.project-brains/vault.sh" ] || { echo "ABORT: vault.sh missing after self-install" >&2; exit 1; }
+rm -rf "$FAKEHOME"
+echo "self-test: 临时 HOME 全新安装通过"
 SHA="$(sha256sum "$TMP/$NAME.zip" | awk '{print $1}')"
 
 # 2. Generate self-contained installer
