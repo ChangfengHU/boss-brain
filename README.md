@@ -43,12 +43,16 @@ bash doctor.sh    # 逐项 PASS/FAIL
 - 多任务:每任务独立记录文件,并发会话零冲突;"继续"有歧义时列清单让用户选。
 - `.brain-home` 指针:brain 托管在别处的项目(如 suqu 各业务仓库 → suqu-control-plane),记录写归属地,不重复建脑。
 
-## 能力档位(v0.3.0 实况)
+## 能力档位(v0.3.7 实况)
+
+codex hooks 说明:安装器向 `~/.codex/config.toml` 写入 managed TOML 块注册
+SessionStart(JSON 注入)与 Stop(证据拦截)。codex 有 hook 信任机制,
+**首次打开 codex TUI 会弹 hooks 审查提示,选择信任一次即永久生效**;未信任前 hook 被静默跳过。
 
 | 工具 | 宪法 | 开场注入 | 收工强制 | 命令 | skill |
 |---|---|---|---|---|---|
 | Claude Code | ✅ | ✅ SessionStart hook | ✅ Stop hook(有 commit 无证据即拦截) | ✅ 三命令 | ✅ |
-| Codex | ✅ | prelude(宪法) | 宪法软约束 | ✅ prompts 三命令 | ✅ |
+| Codex | ✅ | ✅ SessionStart hook(JSON 注入) | ✅ Stop hook(拦截已实测) | ✅ /prompts:四命令 + skill 形态 | ✅ |
 | pi-agent | ✅ | ✅ TS extension(严格类型检查过;TUI 实跑待验) | 宪法软约束 | skill 流程触发 | ✅ |
 | OpenCode | ✅(检测到才装) | 宪法 | 宪法软约束 | skill 流程触发 | ✅ |
 | Gemini CLI | ✅ | 宪法 | 宪法软约束 | — | — |
@@ -67,5 +71,5 @@ bash doctor.sh    # 逐项 PASS/FAIL
 ## 路线图(剩余)
 
 1. OpenCode JS 插件(本机未装该工具,无法验证,暂不发未测代码)。
-2. pi extension 的 TUI 实跑验收(需要真实 pi 会话,用户侧一次即可)。
+2. pi extension 的 TUI 实跑验收 + 收工事件强制(对齐 codex/claude 档位)。
 3. 真实秘钥入库(vault 已就绪,等用户定一次口令执行 push)。

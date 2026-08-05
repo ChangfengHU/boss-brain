@@ -78,6 +78,15 @@ else
   bad "stop-hook: 脚本缺失"
 fi
 
+# codex lifecycle hooks
+if [ -d "$HOME/.codex" ]; then
+  grep -q 'project-brains:hooks:begin' "$HOME/.codex/config.toml" 2>/dev/null \
+    && ok "codex: 生命周期 hooks 已注册 (config.toml managed block)" || bad "codex: hooks 块缺失"
+  out="$(echo '{"cwd":"/nonexistent-xyz"}' | "$HOME/.project-brains/hooks/codex-session-start.sh" 2>/dev/null)"
+  printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["hookSpecificOutput"]["hookEventName"]=="SessionStart" and d["hookSpecificOutput"]["additionalContext"]' 2>/dev/null \
+    && ok "codex: SessionStart 包装脚本输出合法 JSON" || bad "codex: 包装脚本输出异常"
+fi
+
 # vault tooling
 [ -x "$HOME/.project-brains/vault.sh" ] && ok "vault: 工具已就位" || bad "vault: 工具缺失"
 

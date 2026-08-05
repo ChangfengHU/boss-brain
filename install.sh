@@ -35,7 +35,7 @@ install_skill() { # $1=skills dir
 # ---------- shared runtime dir ----------
 mkdir -p "$HOME/.project-brains/hooks"
 touch "$HOME/.project-brains/registry.tsv"
-cp "$SRC/hooks/session-start.sh" "$SRC/hooks/stop-evidence-check.sh" "$HOME/.project-brains/hooks/"
+cp "$SRC/hooks/session-start.sh" "$SRC/hooks/stop-evidence-check.sh" "$SRC/hooks/codex-session-start.sh" "$HOME/.project-brains/hooks/"
 chmod +x "$HOME/.project-brains/hooks/"*.sh
 cp "$SRC/scripts/vault.sh" "$HOME/.project-brains/vault.sh"
 chmod +x "$HOME/.project-brains/vault.sh"
@@ -57,6 +57,25 @@ install_cmd_skills() { # $1=skills dir; 四命令各发布为独立 skill(紧凑
       awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{f=0;next} !f' "$c"
     } > "$1/$n/SKILL.md"
   done
+}
+
+
+merge_toml_hooks() { # $1=config.toml path — managed TOML block for codex lifecycle hooks
+  local target="$1" tmp TB='# project-brains:hooks:begin (managed, do not edit inside)' TE='# project-brains:hooks:end'
+  touch "$target"
+  tmp="$(mktemp)"
+  awk -v b="$TB" -v e="$TE" '$0==b {skip=1; next} $0==e {skip=0; next} !skip {print}' "$target" >"$tmp"
+  { cat "$tmp"; echo ""; echo "$TB"
+    echo '[[hooks.SessionStart]]'
+    echo '[[hooks.SessionStart.hooks]]'
+    echo 'type = "command"'
+    echo "command = \"$HOME/.project-brains/hooks/codex-session-start.sh\""
+    echo '[[hooks.Stop]]'
+    echo '[[hooks.Stop.hooks]]'
+    echo 'type = "command"'
+    echo "command = \"$HOME/.project-brains/hooks/stop-evidence-check.sh\""
+    echo "$TE"; } | awk 'NF{blank=0} !NF{blank++} blank<2' >"$target"
+  rm -f "$tmp"
 }
 
 # ---------- Claude Code ----------
@@ -93,7 +112,8 @@ if [ -d "$HOME/.codex" ]; then
   install_skill "$HOME/.codex/skills"
   install_cmd_skills "$HOME/.codex/skills"
   install_commands "$HOME/.codex/prompts"
-  REPORT+=("codex    : 宪法 ~/.codex/AGENTS.md | skill | /handoff /takeover  [降级: 无 hook,收工纪律靠宪法]")
+  merge_toml_hooks "$HOME/.codex/config.toml"
+  REPORT+=("codex    : 宪法 | skill | SessionStart+Stop hooks | /prompts:四命令  [完整;首次打开 codex 会弹 hooks 审查,请选择信任]")
 else
   REPORT+=("codex    : 未检测到,跳过")
 fi
