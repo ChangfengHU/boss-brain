@@ -27,7 +27,7 @@ bash doctor.sh    # 逐项 PASS/FAIL
 
 升级 = git pull 后重跑 install.sh(managed block 原地替换,不碰用户自己的内容)。
 
-## 两个命令(Claude Code `/xxx`,Codex `/prompts` 同名)
+## 四个命令(Claude Code 输 `/xxx`;Codex 有命名空间前缀,输 `/prompts:xxx`,如 `/prompts:brain-init`——直接输 `/xxx` 会被当普通文字)
 
 - **`/handoff-show` 预览**:只读展示 HANDOFF 现状与完整度评分(X/10)、"接手者会卡在哪",供用户人工判断;不做任何修改。
 - **`/handoff` 交接**:确定要交接时手动执行——逐项校验交接文档质量(完整性、快照污染、验证命令实跑、状态一致、无密钥明文),能修的当场修,最后 commit 并**征得用户同意后 push**,给出"交接就绪/未就绪"结论。任何流程中 push 都不是默认动作(公司仓库可能禁推),必须用户本次明确同意。
