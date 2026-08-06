@@ -26,7 +26,7 @@ description: Project continuity protocol. Use when a session starts without a bo
 1. 创建 `.brain/HANDOFF.md`(用第 3 节的模板,能填的填,不能填的留 TODO);
 2. 向 `~/.project-brains/registry.tsv` 追加一行 `绝对路径<TAB>项目名`(已存在则跳过)。
 
-不预建任何其他文件或目录。TASKS.md 在第一个任务出现时创建;`tasks/<id>/` 在第二个并发任务出现时才分裂;`dev-log/` 在第一次落证据时创建;`wiki/` 在第一个词条入库时创建。踩坑教训就是 wiki 词条(不单设 LESSONS 文件;项目已有的 LESSONS/experience 类文件保留原位并在 wiki index 里挂链)。
+不预建任何其他文件或目录。TASKS.md 在第一个任务出现时创建;`tasks/<id>/` 在第二个并发任务出现时才分裂;`dev-log/` 在第一次落证据时创建;`wiki/` 在第一个词条入库时创建;`CONVENTIONS.md` 在第一条长期协作规范(如"agent 给命令、用户亲自执行"这类职责边界)确认时创建,收工清单遇到新规范随手追加。踩坑教训就是 wiki 词条(不单设 LESSONS 文件;项目已有的 LESSONS/experience 类文件保留原位并在 wiki index 里挂链)。
 
 ## 3. HANDOFF.md:接收协议(不是进度报告)
 
@@ -116,7 +116,7 @@ lint(低频,用户说"lint wiki"或冷启动演练时顺带):找词条间矛盾�
 
 ## 7. 五个显式命令(用户的郑重时刻)
 
-- `/brain-init`(接入):存量项目首次接入——从现有资料(README/文档/git 历史)蒸馏出 HANDOFF,含凭据与依赖发现;确认不了的写 TODO 并当场问用户。
+- `/brain-init`(接入):存量项目首次接入——**三源考古**(项目文件/当前会话历史/真实环境)分类落盘到 HANDOFF/TASKS/CONVENTIONS/wiki/secrets,含凭据发现与 vault 入库提议、覆盖度自检;确认不了的写 TODO 并当场问用户。
 - `/handoff-show`(预览):**只读**展示 HANDOFF 现状 + 完整度评分(X/10)+ "接手者会卡在哪",供用户人工判断够不够交接;结尾问用户"有没有你知道但文档没写的",不做任何写入。
 - `/handoff`(交接):用户确定要交接时执行——逐项校验交接质量并做最后优化,commit 后**征得用户同意再 push**,给出"交接就绪/未就绪"结论(未推送则结论必须注明"仅本地")。
 - `/takeover`(接手):新 agent 首次进项目执行一次——完整加载 HANDOFF/密钥位置/规范/任务状态进上下文,实跑验证,修漂移,汇报。不随会话自动重载;后续自己需要时可再执行。
