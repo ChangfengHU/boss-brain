@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# project-brains one-liner installer (v0.4.0, release 20260806042916) — auto-generated, do not edit.
+# project-brains one-liner installer (v0.4.0, release 20260806052200) — auto-generated, do not edit.
 set -euo pipefail
-ZIP_URL="https://skill.vyibc.com/project-brains/release/project-brains-20260806042916.zip"
-ZIP_SHA256="67603608c39397209d9c8c95c37d0e00f9ee573ba8c12fadc4b3322e62f11430"
+ZIP_URL="https://skill.vyibc.com/project-brains/release/project-brains-20260806052200.zip"
+ZIP_SHA256="706f647a0b36efeba6b790c1c0b623a8c7e41001733b279ac480f09b7a6b5ad3"
 D="$(mktemp -d)"; trap 'rm -rf "$D"' EXIT
 echo "Downloading project-brains v0.4.0 ..."
 curl -fsSL "$ZIP_URL" -o "$D/pb.zip"
