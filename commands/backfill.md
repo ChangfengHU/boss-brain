@@ -16,11 +16,9 @@ description: 补账巡检——按指定范围考古历史 commit,补齐缺失�
      典型信号是 fix 后面跟着根因描述、同一问题的连续多次 fix。词条内注明
      "考古自 commit <hash>,结论未当场复验"。
    - **HANDOFF**:发现世界结构变化(新服务/新机器/新部署方式/新约定)且 HANDOFF 未记 → 补对应段。
-   - **证据行**:仅对确有必要留痕的 commit 补,格式同常规但必须
-     `"verify":"none","backfill":true`——**绝不编造验证命令与退出码**;
-     wiki 字段照常必填(slug 或 "none")。
+   - **证据行**:仅对确有必要留痕的 commit 补——判据:纯 test/chore 且改动小、已被同日 dev-log 叙事覆盖的可并账不单立,其余单立。格式同常规但必须 `"verify":"none","exit":null,"backfill":true`——**绝不编造验证命令与退出码**;wiki 字段照常必填(slug 或 "none")。
 4. **诚实边界**:看不懂的 commit 列出来问用户,不猜;拿不准是否值得沉淀的,列出候选让用户挑;
    补账产出是二等数据(考古必然失真),永远不覆盖既有的当场记录。
-5. **收尾**:全部写入并入一个 `docs(brain): 补账 <范围>` commit(本地);
+5. **收尾**:全部写入合成一个 `docs(brain): 补账 <范围>` commit(本地);证据行记这个 commit 的 hash,证据自身按 SKILL §5 契约再单独收口一次(收口 commit 本身不需要证据);
    push 前征得用户同意。输出报告:补了几段 dev-log、几个 wiki 词条、HANDOFF 动没动、
    跳过多少已记录 commit、多少条待用户解答。
