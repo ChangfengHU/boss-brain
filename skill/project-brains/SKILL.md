@@ -7,6 +7,12 @@ description: Project continuity protocol. Use when a session starts without a bo
 
 你是这套协议的执行者。原则:系统只在边界(开工/收工)现身,过程零打扰;结构按需生长,不预铺;无状态变化零写入。
 
+**写作加载纪律(渐进式,动笔才加载)**:创建或修改下列文档前,必须先**整篇读完**本 skill 目录
+`guides/` 下对应指南,按其质量标准写作与自检;平时任何会话都不加载它们:
+HANDOFF → `guides/handoff-authoring.md` · 正式验收/接管声明 → `guides/acceptance.md` ·
+wiki 词条 → `guides/wiki-authoring.md` · dev-log 与 TASKS → `guides/devlog-tasks-authoring.md`。
+本文件只保留协议骨架;质量细节全部在指南里,骨架与指南冲突时以指南为准。
+
 ## 1. 会话工作空间绑定(每个会话的第一件事)
 
 会话未绑定工作空间时(SessionStart hook 会注入提示,典型情况:在 home 根目录打开):

@@ -94,6 +94,13 @@ if [ -d "$HOME/.codex" ]; then
     && ok "codex: SessionStart 包装脚本输出合法 JSON" || bad "codex: 包装脚本输出异常"
 fi
 
+# authoring guides ship with skill
+for gd in "$HOME/.claude/skills/project-brains/guides" "$HOME/.codex/skills/project-brains/guides"; do
+  [ -d "$(dirname "$(dirname "$(dirname "$gd")")")" ] || continue
+  n=$(ls "$gd"/*.md 2>/dev/null | wc -l)
+  [ "$n" -ge 4 ] && ok "$(echo "$gd" | cut -d/ -f3): 写作指南已分发 ($n 篇)" || bad "$(echo "$gd" | cut -d/ -f3): 写作指南缺失"
+done
+
 # vault tooling
 [ -x "$HOME/.project-brains/vault.sh" ] && ok "vault: 工具已就位" || bad "vault: 工具缺失"
 

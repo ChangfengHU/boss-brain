@@ -28,7 +28,7 @@ description: 给一个已存在/运行中的项目接入 project-brains——从
    - 执行 `~/.project-brains/vault.sh push <secrets-dir> <vault-url>` 推密文到远端(向用户当场要一次口令,口令不落任何文件);vault-url 用 `https://skill.vyibc.com/<项目名>/vault` 约定,写入 `secrets/VAULT.md` 与 HANDOFF;
    - 用户拒绝则记录"密钥仅存本机,换机需人工搬运"为已知风险。**没有这步,换机器时密钥断层,交接不成立。**
 
-6. **分类落盘**(会话与文件考古的产出各归其位,不许全塞 HANDOFF):
+6. **分类落盘**(动笔前按 skill 写作加载纪律读对应 guides/ 指南,各类文档按指南质量标准生成)(会话与文件考古的产出各归其位,不许全塞 HANDOFF):
    | 信息 | 去处 |
    |---|---|
    | 世界结构/机器/服务/接管方法/雷区 | `HANDOFF.md`(五段模板,验证命令必须实跑过) |

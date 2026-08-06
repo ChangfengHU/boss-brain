@@ -1,4 +1,4 @@
-version=0.3.12
-release=20260806025154
-sha256=68f6e20cb74f8d0c28d5f6a8a09aa659b8a9ca67670863c8f16d4d5f1c5a1c7a
-zip_url=https://skill.vyibc.com/project-brains/release/project-brains-20260806025154.zip
+version=0.4.0
+release=20260806042916
+sha256=67603608c39397209d9c8c95c37d0e00f9ee573ba8c12fadc4b3322e62f11430
+zip_url=https://skill.vyibc.com/project-brains/release/project-brains-20260806042916.zip
