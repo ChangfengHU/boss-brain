@@ -3,3 +3,4 @@
 ## [2026-08-04] ingest | 首批词条:设计思想五篇(蒸馏自与用户的方案定稿对话)
 ## [2026-08-06] ingest | codex-hooks-mechanism
 ## [2026-08-06] ingest | soft-vs-hard-discipline
+## [2026-08-06] ingest | evidence-commit-contract

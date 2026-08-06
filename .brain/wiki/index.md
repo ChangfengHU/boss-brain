@@ -5,5 +5,6 @@
 - [trigger-granularity](trigger-granularity.md) — 写入跟状态变化走;加载分 L0/L1/L2 三档
 - [multi-task-binding](multi-task-binding.md) — 会话绑定任务而非项目;brain 是停车场不是单车道
 - [llm-wiki-schema](llm-wiki-schema.md) — Karpathy llm-wiki 三层的适配:证据流当 raw 层,schema 进 skill
-- codex-hooks-mechanism — codex 0.146 hooks 配置/JSON协议/trust 哈希机制实测
-- soft-vs-hard-discipline — 被强制的必然完成:wiki 判断为何从提议改为必答题
+- [codex-hooks-mechanism](codex-hooks-mechanism.md) — codex 0.146 hooks 配置/JSON协议/trust 哈希机制实测
+- [soft-vs-hard-discipline](soft-vs-hard-discipline.md) — 被强制的必然完成:wiki 判断为何从提议改为必答题
+- [evidence-commit-contract](evidence-commit-contract.md) — 禁 amend 禁 pending:证据指针为何 10/14 失效及写入顺序铁律
