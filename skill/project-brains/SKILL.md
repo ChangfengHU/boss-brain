@@ -74,6 +74,10 @@ description: Project continuity protocol. Use when a session starts without a bo
 ```
 
 - `verify` 必须是真实运行过的命令,`exit` 是真实退出码;没验证就写 `"verify":"none"`,不许编。
+- **`commit` 字段记"工作 commit"的 hash,禁止用 `--amend` 把证据行并进它所记录的那个 commit**
+  ——amend 会改写 hash,让证据指针当场作废(外部审计实锤过 10/14 条失效)。
+  正确顺序:工作 commit → 写证据/dev-log → 单独 `docs(brain)` commit。写 hash 前用
+  `git rev-parse --short HEAD` 取,不写 "pending" 留待回填(必然忘)。
 - **`wiki` 字段必填**(Stop hook 会机读检查):本会话若产生了三类认知之一——
   ①用户纠正了你的认知 ②多轮试错才打通的方法 ③对外部系统的考古结论——
   必须先沉淀 wiki 再填词条 slug;确实没有则填 `"none"`(表示判断过,不是忘了)。

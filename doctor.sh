@@ -61,7 +61,7 @@ for sd in "$HOME/.codex/skills" "$HOME/.config/opencode/skills"; do
   [ "$miss" -eq 0 ] && ok "$(basename "$(dirname "$sd")"): 五命令 skill 形态已安装" || bad "$(basename "$(dirname "$sd")"): 命令 skill 缺失"
 done
 
-# stop hook behavior (6 deterministic cases: 3 gates + pass + anti-loop)
+# stop hook behavior (5 deterministic cases: 3 gates + pass + anti-loop)
 sh="$HOME/.project-brains/hooks/stop-evidence-check.sh"
 if [ -x "$sh" ]; then
   tr="$(mktemp -d)"; ( cd "$tr" && git init -q -b main && git config user.email t@t && git config user.name t \
