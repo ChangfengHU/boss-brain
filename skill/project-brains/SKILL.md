@@ -26,7 +26,7 @@ description: Project continuity protocol. Use when a session starts without a bo
 1. 创建 `.brain/HANDOFF.md`(用第 3 节的模板,能填的填,不能填的留 TODO);
 2. 向 `~/.project-brains/registry.tsv` 追加一行 `绝对路径<TAB>项目名`(已存在则跳过)。
 
-不预建任何其他文件或目录。TASKS.md 在第一个任务出现时创建;`tasks/<id>/` 在第二个并发任务出现时才分裂;LESSONS.md 在第一次踩坑时创建;`wiki/` 在第一个词条入库时创建。
+不预建任何其他文件或目录。TASKS.md 在第一个任务出现时创建;`tasks/<id>/` 在第二个并发任务出现时才分裂;`dev-log/` 在第一次落证据时创建;`wiki/` 在第一个词条入库时创建。踩坑教训就是 wiki 词条(不单设 LESSONS 文件;项目已有的 LESSONS/experience 类文件保留原位并在 wiki index 里挂链)。
 
 ## 3. HANDOFF.md:接收协议(不是进度报告)
 
@@ -70,11 +70,19 @@ description: Project continuity protocol. Use when a session starts without a bo
 向对应 evidence.jsonl 追加一行 JSON:
 
 ```json
-{"date":"2026-08-04","task":"t-1","summary":"一句话","files":["a.js"],"verify":"node test.js","exit":0,"risks":"残余风险或 none","commit":"<hash>"}
+{"date":"2026-08-04","task":"t-1","summary":"一句话","files":["a.js"],"verify":"node test.js","exit":0,"risks":"残余风险或 none","wiki":"词条slug 或 none","commit":"<hash>"}
 ```
 
 - `verify` 必须是真实运行过的命令,`exit` 是真实退出码;没验证就写 `"verify":"none"`,不许编。
-- dev-log 不单独写——evidence 就是日志源,需要人读的摘要从它生成。
+- **`wiki` 字段必填**(Stop hook 会机读检查):本会话若产生了三类认知之一——
+  ①用户纠正了你的认知 ②多轮试错才打通的方法 ③对外部系统的考古结论——
+  必须先沉淀 wiki 再填词条 slug;确实没有则填 `"none"`(表示判断过,不是忘了)。
+- **dev-log**:`.brain/dev-log/<YYYY-MM-DD>.md`,按日期一文件的文件夹集合;
+  收工落证据的同时,向当天文件追加一段人读叙事(做了什么/为什么/卡在哪)。
+  evidence 是机器源,dev-log 是人读面,同一时刻写,内容不必重复格式。
+- **收口纪律**:收工时 `.brain/` 必须干净——本会话的 brain 写入(证据/dev-log/wiki)
+  由你判断并入本次任务 commit 或合成一个 `docs(brain)` commit(本地即可,push 仍需用户同意);
+  不逐文件碎提交,也不留脏文件堆积。Stop hook 会检查 `.brain` 有无未提交改动。
 - 纯问答会话:什么都不写,不解释,不提议。
 
 ## 6. wiki(项目的 llm-wiki)
@@ -102,12 +110,13 @@ lint(低频,用户说"lint wiki"或冷启动演练时顺带):找词条间矛盾�
 
 毕业通道:词条被反复引用 → 蒸馏成一条规范进 CONVENTIONS/宪法,或升级成 skill/脚本。
 
-## 7. 四个显式命令(用户的郑重时刻)
+## 7. 五个显式命令(用户的郑重时刻)
 
 - `/brain-init`(接入):存量项目首次接入——从现有资料(README/文档/git 历史)蒸馏出 HANDOFF,含凭据与依赖发现;确认不了的写 TODO 并当场问用户。
 - `/handoff-show`(预览):**只读**展示 HANDOFF 现状 + 完整度评分(X/10)+ "接手者会卡在哪",供用户人工判断够不够交接;结尾问用户"有没有你知道但文档没写的",不做任何写入。
 - `/handoff`(交接):用户确定要交接时执行——逐项校验交接质量并做最后优化,commit 后**征得用户同意再 push**,给出"交接就绪/未就绪"结论(未推送则结论必须注明"仅本地")。
 - `/takeover`(接手):新 agent 首次进项目执行一次——完整加载 HANDOFF/密钥位置/规范/任务状态进上下文,实跑验证,修漂移,汇报。不随会话自动重载;后续自己需要时可再执行。
+- `/backfill`(补账巡检):按范围考古历史 commit(`10`=最近10条,`10-20`=第10到20条),补缺失的 dev-log/wiki/HANDOFF;产出标记考古所得,"verify":"none"+"backfill":true,绝不编造验证。
 - 调用名差异:Claude Code 直接 `/xxx`;Codex 是 `/prompts:xxx`(有命名空间前缀)。
 - 无命令体系的工具里,用户说"初始化一下/看下交接文档/交接一下/接手一下"等价触发,按本 skill 同名流程执行。
 
@@ -123,7 +132,7 @@ lint(低频,用户说"lint wiki"或冷启动演练时顺带):找词条间矛盾�
 
 ## 8. 收工检查清单(Stop 前自查,30 秒)
 
-1. 本会话有 commit?→ 落证据记录;没有 → 什么都不写。
+1. 本会话有 commit?→ 落证据记录 + 追加当日 dev-log;没有 → 什么都不写。
 2. **交接判断**:本次开发有没有引入下列任何一项?有 → 当场把 HANDOFF 对应段补上
    (交接文档是开发的副产品,当场一行,别留给未来考古):
    - 新密钥/环境变量/token(HANDOFF 记名字与位置,值进 secrets;有 vault 提议 push);
@@ -132,6 +141,10 @@ lint(低频,用户说"lint wiki"或冷启动演练时顺带):找词条间矛盾�
    - 新约定/新雷区(踩了不可逆的坑);
    - 验证方法变化(旧的验证命令失效或有了更好的)。
    都没有 → 不碰 HANDOFF。
-3. 有高重获成本认知?→ 提议入 wiki。
+3. **wiki 硬判断**(不是"提议",是必答题):本会话是否产生了
+   ①被用户纠正的认知 ②多轮试错才打通的方法 ③对外部系统的考古结论?
+   有 → 沉淀词条,证据 `wiki` 字段填 slug;没有 → 字段填 `"none"`。
+   Stop hook 机读该字段,缺失即拦。
 4. 任务状态变了?→ 更新 TASKS.md 那一行。
-5. 全程未输出任何密钥明文。
+5. `.brain/` 收口:所有 brain 写入并入 commit(本地),不留脏文件。
+6. 全程未输出任何密钥明文。

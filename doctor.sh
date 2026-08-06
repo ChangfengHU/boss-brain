@@ -49,30 +49,37 @@ check_tool "opencode" "$HOME/.config/opencode/AGENTS.md"  "$HOME/.config/opencod
 check_tool "pi-agent" "$HOME/.pi/agent/AGENTS.md"         "$HOME/.pi/agent/skills"
 
 # commands
-for c in handoff takeover brain-init handoff-show; do
+for c in handoff takeover brain-init handoff-show backfill; do
   [ -f "$HOME/.claude/commands/$c.md" ] || { bad "claude: 命令 $c 缺失"; continue; }
 done
-[ -f "$HOME/.claude/commands/handoff-show.md" ] && ok "claude: 四命令已安装(handoff/takeover/brain-init/handoff-show)"
+[ -f "$HOME/.claude/commands/handoff-show.md" ] && ok "claude: 五命令已安装(handoff/takeover/brain-init/handoff-show/backfill)"
 [ ! -d "$HOME/.codex" ] || { [ -f "$HOME/.codex/prompts/handoff-show.md" ] \
-  && ok "codex: 四命令已安装" || bad "codex: 命令缺失"; }
+  && ok "codex: 五命令已安装" || bad "codex: 命令缺失"; }
 for sd in "$HOME/.codex/skills" "$HOME/.config/opencode/skills"; do
   [ -d "$(dirname "$sd")" ] || continue
-  miss=0; for c in brain-init takeover handoff handoff-show; do [ -f "$sd/$c/SKILL.md" ] || miss=1; done
-  [ "$miss" -eq 0 ] && ok "$(basename "$(dirname "$sd")"): 四命令 skill 形态已安装" || bad "$(basename "$(dirname "$sd")"): 命令 skill 缺失"
+  miss=0; for c in brain-init takeover handoff handoff-show backfill; do [ -f "$sd/$c/SKILL.md" ] || miss=1; done
+  [ "$miss" -eq 0 ] && ok "$(basename "$(dirname "$sd")"): 五命令 skill 形态已安装" || bad "$(basename "$(dirname "$sd")"): 命令 skill 缺失"
 done
 
-# stop hook behavior (4 deterministic cases)
+# stop hook behavior (6 deterministic cases: 3 gates + pass + anti-loop)
 sh="$HOME/.project-brains/hooks/stop-evidence-check.sh"
 if [ -x "$sh" ]; then
   tr="$(mktemp -d)"; ( cd "$tr" && git init -q -b main && git config user.email t@t && git config user.name t \
     && mkdir .brain && echo x > f && git add f && git commit -q -m t )
   o1="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
   printf '%s' "$o1" | grep -q '"decision": *"block"' && ok "stop-hook: 有 commit 无证据 → block" || bad "stop-hook: 未拦截"
-  sleep 1; echo '{}' > "$tr/.brain/evidence.jsonl"
+  sleep 1; printf '{"summary":"t","wiki":"none"}\n' > "$tr/.brain/evidence.jsonl"
   o2="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
-  [ -z "$o2" ] && ok "stop-hook: 证据已落 → 放行" || bad "stop-hook: 误拦截"
-  o3="$(printf '{"cwd":"%s","stop_hook_active":true}' "$tr" | "$sh")"
-  [ -z "$o3" ] && ok "stop-hook: stop_hook_active → 防循环放行" || bad "stop-hook: 循环风险"
+  printf '%s' "$o2" | grep -q '未提交' && ok "stop-hook: .brain 脏 → block(收口闸)" || bad "stop-hook: 收口闸失效"
+  ( cd "$tr" && git add .brain && git commit -q -m brain )
+  o3="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
+  [ -z "$o3" ] && ok "stop-hook: 证据齐+wiki已判+已收口 → 放行" || bad "stop-hook: 误拦截 ($o3)"
+  o4="$(printf '{"cwd":"%s","stop_hook_active":true}' "$tr" | "$sh")"
+  [ -z "$o4" ] && ok "stop-hook: stop_hook_active → 防循环放行" || bad "stop-hook: 循环风险"
+  sleep 1; printf '{"summary":"no-wiki-field"}\n' > "$tr/.brain/evidence.jsonl"
+  ( cd "$tr" && git add .brain && git commit -q -m brain2 )
+  o5="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
+  printf '%s' "$o5" | grep -q 'wiki' && ok "stop-hook: 证据缺 wiki 判断 → block(wiki闸)" || bad "stop-hook: wiki闸失效"
   rm -rf "$tr"
 else
   bad "stop-hook: 脚本缺失"
