@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# project-brains one-liner installer (v0.5.1, release 20260807024413) — auto-generated, do not edit.
+# project-brains one-liner installer (v0.5.2, release 20260807030900) — auto-generated, do not edit.
 set -euo pipefail
-ZIP_URL="https://skill.vyibc.com/project-brains/release/project-brains-20260807024413.zip"
-ZIP_SHA256="2a2da4c89bb8681e6a2a78a7c7f4fc845a4693d8ac9d83a332ee271cbfcd81b3"
+ZIP_URL="https://skill.vyibc.com/project-brains/release/project-brains-20260807030900.zip"
+ZIP_SHA256="6c2d998524ae4c2da7db1d1386cab123dc39d7ebd8fe3a78651d0c6b668a3c79"
 D="$(mktemp -d)"; trap 'rm -rf "$D"' EXIT
-echo "Downloading project-brains v0.5.1 ..."
+echo "Downloading project-brains v0.5.2 ..."
 curl -fsSL "$ZIP_URL" -o "$D/pb.zip"
 echo "$ZIP_SHA256  $D/pb.zip" | sha256sum -c - >/dev/null || { echo "SHA256 mismatch, abort."; exit 1; }
 mkdir -p "$HOME/.project-brains"
