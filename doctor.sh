@@ -101,7 +101,8 @@ for gd in "$HOME/.claude/skills/project-brains/guides" "$HOME/.codex/skills/proj
   [ "$n" -ge 4 ] && ok "$(echo "$gd" | cut -d/ -f3): 写作指南已分发 ($n 篇)" || bad "$(echo "$gd" | cut -d/ -f3): 写作指南缺失"
 done
 
-# vault tooling
+# vault + wiki-sync tooling
+[ -x "$HOME/.project-brains/wiki-sync.sh" ] && ok "wiki-sync: 中央同步工具已就位" || bad "wiki-sync: 工具缺失"
 [ -x "$HOME/.project-brains/vault.sh" ] && ok "vault: 工具已就位" || bad "vault: 工具缺失"
 
 # pi extension

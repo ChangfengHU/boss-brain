@@ -38,7 +38,8 @@ touch "$HOME/.project-brains/registry.tsv"
 cp "$SRC/hooks/session-start.sh" "$SRC/hooks/stop-evidence-check.sh" "$SRC/hooks/codex-session-start.sh" "$HOME/.project-brains/hooks/"
 chmod +x "$HOME/.project-brains/hooks/"*.sh
 cp "$SRC/scripts/vault.sh" "$HOME/.project-brains/vault.sh"
-chmod +x "$HOME/.project-brains/vault.sh"
+cp "$SRC/scripts/wiki-sync.sh" "$HOME/.project-brains/wiki-sync.sh"
+chmod +x "$HOME/.project-brains/vault.sh" "$HOME/.project-brains/wiki-sync.sh"
 echo "$VERSION" > "$HOME/.project-brains/version"
 
 install_commands() { # $1=commands dir
