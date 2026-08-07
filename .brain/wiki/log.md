@@ -5,3 +5,4 @@
 ## [2026-08-06] ingest | soft-vs-hard-discipline
 ## [2026-08-06] ingest | evidence-commit-contract
 ## [2026-08-06] ingest | command-carrier-tradeoff(首篇深度词条)
+## [2026-08-06] ingest | wiki-vs-handoff-boundary

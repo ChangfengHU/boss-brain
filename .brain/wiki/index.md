@@ -9,3 +9,4 @@
 - [soft-vs-hard-discipline](soft-vs-hard-discipline.md) — 被强制的必然完成:wiki 判断为何从提议改为必答题
 - [evidence-commit-contract](evidence-commit-contract.md) — 禁 amend 禁 pending:证据指针为何 10/14 失效及写入顺序铁律
 - [command-carrier-tradeoff](command-carrier-tradeoff.md) — 深度研究:提示词/skill/hook/原生命令的完整决策链与四轮争论定论
+- [wiki-vs-handoff-boundary](wiki-vs-handoff-boundary.md) — 词条只留纯知识,资产坐标归 HANDOFF:中央聚合的安全前提
