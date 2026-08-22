@@ -38,6 +38,7 @@ description: 给一个已存在/运行中的项目接入 project-brains——从
    |---|---|
    | 世界结构/机器/服务/接管方法/雷区 | `HANDOFF.md`(五段模板,验证命令必须实跑过) |
    | 当前停在哪(现状/下一步/阻塞/关键路径/雷区) | `STATE.md`(状态卡,一页;boss 的 `@项目名` 注入读的就是它) |
+   | 对外提供什么接口 / 依赖别人什么 | `capabilities.tsv`(provides/consumes 声明;boss 靠它推导能力图,不声明就在图上隐形。模板 `~/.boss/templates/capabilities.tsv`) |
 | 任务三态与学习进度 | `TASKS.md`(考古推断的任务必须标注"状态为推断,待用户校准") |
    | 本项目专属规矩(协作规则/代码设计规范/设计语言/词汇表/架构决策,有状态、只对本项目有用) | `conventions/`(或单文件 CONVENTIONS.md;**永不进 wiki/中央库**,由 HANDOFF 阅读顺序指向) |
    | 高重获成本结论/被拒方案及原因 | `wiki/` 词条 |
@@ -48,7 +49,7 @@ description: 给一个已存在/运行中的项目接入 project-brains——从
 7. **覆盖度自检**(收尾前必须输出):目标/进度/规范/资产/凭据位置与 vault 状态/历史决策/阻塞项/下一步——逐项标"已落盘到哪 / 无此类信息 / 待用户补答",不许留未分类的漏项。
 
 8. **登记与收尾**:登记表追加一行(装了 boss 写 `~/.boss/registry.tsv` 的 5 列格式,并执行
-   `~/.boss/projects.sh --sync` 回写金库,换机器时才还原得回来);确认 `.brain/STATE.md` 已写;
+   `~/.boss/projects.sh --sync` 回写金库,换机器时才还原得回来);确认 `.brain/STATE.md` 已写;确认 `.brain/capabilities.tsv` 已写(至少一行 provides 或 consumes,项目真的不对外提供也不依赖任何本机能力才可留空);
    写入并入 commit 并按本机规范立即 push;汇报生成了什么、需求清单与覆盖检查还剩哪些待用户补答。
 
 不做的事:不建空文件(按需生长);不改项目业务代码与既有文档内容。
