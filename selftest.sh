@@ -49,6 +49,18 @@ work_commit_later() { # $1=仓库 $2=消息 $3=推后几秒
 }
 run() { printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$1" "${2:-nosid}" | bash "$H/stop-evidence-check.sh" 2>&1; }
 
+echo "== 承诺 0:测的必须是线上跑的(src 与已安装副本无漂移)=="
+# 2026-08-23 真踩过:改了 src/hooks 忘同步 hooks/,自测全绿但改动根本没生效。
+for f in stop-evidence-check.sh session-start.sh codex-session-start.sh; do
+  [ -f "$SRC/src/hooks/$f" ] || continue
+  diff -q "$SRC/src/hooks/$f" "$H/$f" >/dev/null 2>&1 \
+    && ok "hooks/$f 无漂移" || bad "hooks/$f 无漂移" "src/hooks 与已安装副本不同,同步后再测"
+done
+if [ -f "$HOME/.claude/skills/project-brains/SKILL.md" ]; then
+  diff -q "$SRC/src/skill/project-brains/SKILL.md" "$HOME/.claude/skills/project-brains/SKILL.md" >/dev/null 2>&1 \
+    && ok "SKILL.md 无漂移" || bad "SKILL.md 无漂移" "src 与 ~/.claude/skills 副本不同,同步后再测"
+fi
+
 echo "== 承诺 1:有 commit 就必须有证据记录 =="
 R="$(mkrepo p1)"
 say_block "有 commit 无证据 → 拦截" "$(run "$R")"
