@@ -6,6 +6,8 @@
 #   gate 4  .brain/STATE.md exists and is no older than the work commits
 #   gate 5  .brain/capabilities.tsv exists and is not the untouched template
 #   gate 3  .brain/ has no uncommitted writes (收口)
+#   gate 3b 无工作 commit 的会话若写了 .brain(如「记下来」),同样必须收口——
+#           纯问答会话不 commit 词条就等于没记(2026-08-23 真实测出的盲区)
 set -u
 
 INPUT="$(cat 2>/dev/null || true)"
@@ -31,6 +33,15 @@ PY
   exit 0
 }
 
+# gate 3b:会话没有工作 commit 时的唯一检查——.brain 写入也必须收口。
+# 「记下来」在纯问答会话里只写文件不 commit,词条留在工作区,机器一坏等于没记。
+brain_dirty_or_exit() {
+  if [ -n "$(git -C "$ROOT" status --porcelain -- .brain 2>/dev/null)" ]; then
+    block "project-brains 收工检查: 本会话没有工作 commit,但 .brain/ 有未提交写入(如「记下来」的 wiki 词条)。不 commit 就等于没记——请合成一个 docs(brain) commit(本机规范:commit 完立即 push),再结束回合。"
+  fi
+  exit 0
+}
+
 # Session-scoped work window: prefer the baseline HEAD recorded at SessionStart, so a commit
 # from a concurrent session in the same repo is never blamed on this one. The 12h window
 # survives only as a fallback for sessions whose start predates the baseline mechanism.
@@ -40,7 +51,7 @@ if [ -f "$BASE_FILE" ]; then
   read -r BASE_ROOT BASE_HEAD < "$BASE_FILE" || true
   if [ "$BASE_ROOT" = "$ROOT" ] && git -C "$ROOT" cat-file -e "${BASE_HEAD}^{commit}" 2>/dev/null; then
     RANGE="${BASE_HEAD}..HEAD"
-    [ -z "$(git -C "$ROOT" rev-list "$RANGE" 2>/dev/null)" ] && exit 0   # this session committed nothing
+    [ -z "$(git -C "$ROOT" rev-list "$RANGE" 2>/dev/null)" ] && brain_dirty_or_exit   # 本会话没提交 → 只查 .brain 收口
   fi
 fi
 if [ -n "$RANGE" ]; then
@@ -48,7 +59,7 @@ if [ -n "$RANGE" ]; then
 else
   LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --since=12.hours --format=%ct 2>/dev/null || true)"
 fi
-[ -n "$LAST_COMMIT_TS" ] || exit 0                   # no session commits → nothing to enforce
+[ -n "$LAST_COMMIT_TS" ] || brain_dirty_or_exit      # 12h 内无 commit → 只查 .brain 收口
 
 # newest evidence: max of file mtimes and the last commit touching .brain
 # (counting the .brain commit avoids re-blocking right after evidence is committed)

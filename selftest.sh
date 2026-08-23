@@ -80,6 +80,16 @@ say_block ".brain/ 有未提交写入 → 拦截" "$(run "$R")"
 commit_brain "$R"
 say_pass  "收口后 → 放行" "$(run "$R")"
 
+# 4b:没有工作 commit 的会话(纯问答里「记下来」)写了 .brain 也必须收口
+R="$(mkrepo p4b)"; ev "$R" none; card "$R"; commit_brain "$R"
+SID4="sess4-$RANDOM"; mkdir -p /tmp/project-brains
+printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "/tmp/project-brains/session-$SID4.head"
+echo "词条" > "$R/.brain/wiki-note.md"
+say_block "无 commit 会话写 .brain 未提交 → 拦截" "$(run "$R" "$SID4")"
+commit_brain "$R"
+say_pass  "收口后 → 放行" "$(run "$R" "$SID4")"
+rm -f "/tmp/project-brains/session-$SID4.head"
+
 echo "== 承诺 5:不是 brain 工作空间就完全不打扰 =="
 mkdir -p "$T/plain"; git -C "$T/plain" init -q
 git -C "$T/plain" config user.email t@t; git -C "$T/plain" config user.name t
