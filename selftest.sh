@@ -30,7 +30,12 @@ ev() { # $1=仓库 $2=wiki 字段值 → 写一条证据
 card() { # $1=仓库 → 写一张状态卡
   printf '# 状态卡\n## 定位\nx\n## 现状\nx\n## 下一步\n1. x\n## 阻塞\n无\n## 关键路径\nx\n## 雷区\n无\n' > "$1/.brain/STATE.md"
 }
-commit_brain() { git -C "$1" add -A >/dev/null 2>&1; git -C "$1" commit -qm "docs(brain)" >/dev/null 2>&1; }
+commit_brain() {
+  # 与真实纪律一致:收工 commit 前刷新状态卡 mtime。否则当 commit 恰好跨秒时,
+  # gate4 会因「状态卡(上一秒)比最新 commit(这一秒)旧」闪烁误拦 —— 实测约 1/10 概率。
+  [ -f "$1/.brain/STATE.md" ] && touch "$1/.brain/STATE.md"
+  git -C "$1" add -A >/dev/null 2>&1; git -C "$1" commit -qm "docs(brain)" >/dev/null 2>&1
+}
 # 门禁比的是秒级时间戳,而夹具里所有事都发生在同一秒内 —— 同秒时它分不出先后
 # (这是 1 秒粒度的固有限制,不是 bug:真实场景里两次 commit 不会同秒)。
 # 所以「工作 commit 晚于 brain 记录」这件事必须显式造出来,不能靠执行顺序。
