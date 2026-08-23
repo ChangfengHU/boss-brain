@@ -4,6 +4,7 @@
 #   gate 1  evidence exists and is at least as new as the work commits
 #   gate 2  newest evidence line carries a machine-readable "wiki" judgment
 #   gate 4  .brain/STATE.md exists and is no older than the work commits
+#   gate 5  .brain/capabilities.tsv exists and is not the untouched template
 #   gate 3  .brain/ has no uncommitted writes (收口)
 set -u
 
@@ -85,6 +86,17 @@ ST_COMMIT_TS="$(git -C "$ROOT" log -1 --format=%ct -- .brain/STATE.md 2>/dev/nul
 [ -n "$ST_COMMIT_TS" ] && [ "$ST_COMMIT_TS" -gt "$ST_TS" ] && ST_TS="$ST_COMMIT_TS"
 if [ "$LAST_COMMIT_TS" -gt "$ST_TS" ]; then
   block "project-brains 收工检查: 本会话有新 commit,但状态卡 .brain/STATE.md 比它旧。请更新状态卡的「现状」与「下一步」——只改真变了的部分,别重写整页,再结束回合。"
+fi
+
+# gate 5: 能力声明必须存在且不是原样模板
+# 为什么:boss 的能力图(/boss-caps)从各项目自己的声明推导,不写这一份,
+# 跨项目改动的影响就看不见。端点多为 URL/MCP 名,真伪查不了,只把守「有没有、改没改」。
+CAPS="$ROOT/.brain/capabilities.tsv"
+if [ ! -f "$CAPS" ]; then
+  block "project-brains 收工检查: 本工作空间没有能力声明 .brain/capabilities.tsv。请写一份(4 列制表符:方向/能力id/端点或位置/一句话;模板在 boss 的 templates/capabilities.tsv)——确实没有对外接口就只留表头注释。boss 的能力图靠各项目自己的声明推导,缺了这一份,跨项目改动影响就看不见。写完并入 brain commit,再结束回合。"
+fi
+if grep -q '这里换成真的' "$CAPS" 2>/dev/null; then
+  block "project-brains 收工检查: .brain/capabilities.tsv 还是没改过的模板(含「这里换成真的」占位)。请换成本项目真实的 provides/consumes 声明,再结束回合。"
 fi
 
 # gate 3: .brain writes must be committed (收口), not left dirty

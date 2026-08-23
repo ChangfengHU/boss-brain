@@ -19,6 +19,8 @@ say_pass()  { if blocked "$2"; then bad "$1" "应当放行,实际拦截:${2:0:16
 mkrepo() { # $1=名字 → 建一个带 .brain 的 git 工作空间,返回路径
   d="$T/$1"; mkdir -p "$d/.brain/dev-log"
   git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
+  # 合规工作空间自带真实的能力声明(gate5);缺失/模板未改的情形由承诺 10 显式构造
+  printf 'provides\ttest.thing\t-\t测试夹具能力\n' > "$d/.brain/capabilities.tsv"
   echo x > "$d/code.txt"; git -C "$d" add -A >/dev/null; git -C "$d" commit -qm "work" >/dev/null
   printf '%s' "$d"
 }
@@ -118,6 +120,17 @@ echo "/elsewhere/.brain" > "$T/ref/.brain-home"
 O="$(printf '{"cwd":"%s","session_id":"s9"}' "$T/ref" | HOME="$T" bash "$H/session-start.sh" 2>&1)"
 printf '%s' "$O" | grep -q "托管在别处" && ok "指针项目给出托管提示" || bad "指针项目给出托管提示" "$O"
 [ -d "$T/ref/.brain" ] && bad "指针项目不建本地 .brain" "本地建了 .brain" || ok "指针项目不建本地 .brain"
+
+echo "== 承诺 10:能力声明不写、不改就不许收工(boss 能力图的地基)=="
+R="$(mkrepo p10)"; ev "$R" none; card "$R"; commit_brain "$R"
+rm -f "$R/.brain/capabilities.tsv"; git -C "$R" add -A >/dev/null; git -C "$R" commit -qm "去掉声明" >/dev/null
+say_block "有 commit 但没有能力声明 → 拦截" "$(run "$R")"
+printf '# 模板\nprovides\texample.thing\thttps://example.com\t这里换成真的\n' > "$R/.brain/capabilities.tsv"
+commit_brain "$R"
+say_block "声明还是原样模板(含占位)→ 拦截" "$(run "$R")"
+printf 'provides\treal.thing\t-\t真实声明\n' > "$R/.brain/capabilities.tsv"
+commit_brain "$R"
+say_pass  "换成真实声明后 → 放行" "$(run "$R")"
 
 echo
 echo "结果:$PASS 通过,$FAIL 失败"
