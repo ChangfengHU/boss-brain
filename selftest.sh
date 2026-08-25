@@ -73,6 +73,23 @@ if [ -d "$HOME/.codex" ]; then
   done
   grep -qF "立即 push" "$HOME/.codex/AGENTS.md" 2>/dev/null \
     && ok "codex 宪法含现行 push 政策" || bad "codex 宪法含现行 push 政策" "AGENTS.md 宪法块是旧版"
+  # 第三条分发通道:codex 命令 skill(installer 生成 frontmatter,正文必须等于 src 去掉 frontmatter)
+  # 生成器会在 frontmatter 后多一个空行,比较时剥掉头部空行
+  strip_fm() { awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{f=0;next} !f' "$1" | sed '/./,$!d'; }
+  for c in "$SRC/src/commands/"*.md; do
+    n="$(basename "$c" .md)"
+    [ -f "$HOME/.codex/skills/$n/SKILL.md" ] || { bad "codex 命令skill/$n 无漂移" "未安装"; continue; }
+    [ "$(strip_fm "$c")" = "$(strip_fm "$HOME/.codex/skills/$n/SKILL.md")" ] \
+      && ok "codex 命令skill/$n 无漂移" || bad "codex 命令skill/$n 无漂移" "正文与 src 不同,重跑 src/install.sh"
+  done
+fi
+# 旧 push 文案全域清零(2026-08-25 二轮:上一轮"统一"漏了 SKILL:152 与 takeover 一族)
+if grep -rn "push 前先征得\|push 仍需用户同意\|push 需用户同意\|征询用户同意再 push\|push 必须先获得用户" \
+     "$SRC/src" "$HOME/.claude/skills/project-brains" "$HOME/.claude/commands" \
+     "$HOME/.codex/skills" "$HOME/.codex/prompts" >/dev/null 2>&1; then
+  bad "push 旧文案清零" "$(grep -rln 'push 前先征得\|push 仍需用户同意\|push 需用户同意\|征询用户同意再 push\|push 必须先获得用户' "$SRC/src" "$HOME/.claude/skills/project-brains" "$HOME/.claude/commands" "$HOME/.codex/skills" "$HOME/.codex/prompts" 2>/dev/null | head -3)"
+else
+  ok "push 旧文案清零(src+四个安装面)"
 fi
 [ "$(cat "$HOME/.project-brains/version" 2>/dev/null)" = "$(cat "$SRC/src/VERSION" 2>/dev/null)" ] \
   && ok "version 记账与 src/VERSION 一致" || bad "version 记账与 src/VERSION 一致" "重跑 src/install.sh"
@@ -181,6 +198,27 @@ GIT_AUTHOR_DATE="$(date -d '+240 seconds' +%s) +0000" GIT_COMMITTER_DATE="$(date
   git -C "$R" commit -qm "只动状态卡" >/dev/null
 say_block "STATE-only commit 不能顶掉证据新鲜度 → 仍拦截" "$(run "$R")"
 
+echo "== 承诺 11b:merge 提交穿不透证据门禁(2026-08-25 二轮收洞)=="
+# git 历史简化会让 `log -1 -- pathspec` 对 merge 返回被合分支的旧时间戳:
+# 证据(1 天前)"新于"它 → gate1/gate4 双穿透。现改为基线树 diff 判工作、无 pathspec 取时间戳。
+R="$(mkrepo p11b)"
+git -C "$R" checkout -qb feat
+echo feat > "$R/feat.txt"; git -C "$R" add -A >/dev/null
+GIT_AUTHOR_DATE="$(date -d '-2 days' +%s) +0000" GIT_COMMITTER_DATE="$(date -d '-2 days' +%s) +0000" \
+  git -C "$R" commit -qm "旧分支工作" >/dev/null
+git -C "$R" checkout -q -
+ev "$R" none; card "$R"
+git -C "$R" add -A >/dev/null
+GIT_AUTHOR_DATE="$(date -d '-1 day' +%s) +0000" GIT_COMMITTER_DATE="$(date -d '-1 day' +%s) +0000" \
+  git -C "$R" commit -qm "docs(brain)" >/dev/null
+# 证据/状态卡必须"真旧":文件 mtime 也在门禁判据里,不回拨的话夹具全在同一秒,复现不了穿透
+touch -d '-1 day' "$R/.brain/evidence.jsonl" "$R/.brain/STATE.md" "$R/.brain/dev-log/2026-01-01.md" 2>/dev/null
+SIDM="st-merge-$RANDOM"; mkdir -p /tmp/project-brains
+printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "/tmp/project-brains/session-$SIDM.head"
+git -C "$R" merge -q --no-ff -m "merge feat" feat >/dev/null 2>&1
+say_block "会话内 merge 带入代码且证据更旧 → 拦截" "$(run "$R" "$SIDM")"
+rm -f "/tmp/project-brains/session-$SIDM.head"
+
 echo "== 承诺 12:compact/resume 不重置会话基线(2026-08-25 收洞)=="
 R="$(mkrepo p12)"; SID="st-base-$RANDOM"
 ss() { printf '{"cwd":"%s","session_id":"%s"}' "$R" "$SID" | bash "$H/session-start.sh" >/dev/null 2>&1; }
@@ -196,6 +234,17 @@ R="$(mkrepo p13)"; printf '# 任务\n- [x] 已完成的任务\n' > "$R/.brain/TA
 O="$(printf '{"cwd":"%s","session_id":"st-clean"}' "$R" | bash "$H/session-start.sh" 2>&1)"
 printf '%s' "$O" | grep -q "活跃任务 0 个" && ok "零活跃任务时输出 0 个" || bad "零活跃任务时输出 0 个" "$O"
 printf '%s' "$O" | grep -qE "integer expression|^0$" && bad "无垃圾行/无报错" "$O" || ok "无垃圾行/无报错"
+
+echo "== 承诺 14:含空格路径的工作空间门禁照常生效(2026-08-25 二轮收洞)=="
+mkdir -p "$T/my proj"; d="$T/my proj"
+git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
+mkdir -p "$d/.brain"; echo x > "$d/code.txt"; git -C "$d" add -A >/dev/null; git -C "$d" commit -qm work >/dev/null
+SIDS="st-space-$RANDOM"; printf '%s %s\n' "$d" "$(git -C "$d" rev-parse HEAD)" > "/tmp/project-brains/session-$SIDS.head"
+echo more >> "$d/code.txt"; git -C "$d" add -A >/dev/null
+GIT_AUTHOR_DATE="$(date -d '+120 seconds' +%s) +0000" GIT_COMMITTER_DATE="$(date -d '+120 seconds' +%s) +0000" \
+  git -C "$d" commit -qm work2 >/dev/null
+say_block "空格路径 + 有 commit 无证据 → 仍拦截" "$(run "$d" "$SIDS")"
+rm -f "/tmp/project-brains/session-$SIDS.head"
 
 echo
 echo "结果:$PASS 通过,$FAIL 失败"

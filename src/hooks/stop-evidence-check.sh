@@ -11,14 +11,19 @@
 set -u
 
 INPUT="$(cat 2>/dev/null || true)"
-read -r CWD ACTIVE SID <<EOF
-$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+# 逐行取字段,不用空格分隔的一次性 read:cwd 含空格会错位 → ROOT 解析失败 → 门禁静默关闭
+# (2026-08-25 二轮审计实测;session-start.sh 一直是逐字段解析,此处对齐)
+PARSED="$(printf '%s' "$INPUT" | python3 -c 'import sys,json
 try:
   d=json.load(sys.stdin)
-  print(d.get("cwd",""), str(d.get("stop_hook_active",False)).lower(), d.get("session_id","-"))
+  print(d.get("cwd",""))
+  print(str(d.get("stop_hook_active",False)).lower())
+  print(d.get("session_id","-") or "-")
 except Exception:
-  print("", "false", "-")' 2>/dev/null)
-EOF
+  print(); print("false"); print("-")' 2>/dev/null)"
+CWD="$(printf '%s\n' "$PARSED" | sed -n 1p)"
+ACTIVE="$(printf '%s\n' "$PARSED" | sed -n 2p)"
+SID="$(printf '%s\n' "$PARSED" | sed -n 3p)"
 [ "${ACTIVE:-false}" = "true" ] && exit 0   # already continued once; never loop
 [ -n "${CWD:-}" ] || exit 0
 
@@ -48,18 +53,28 @@ brain_dirty_or_exit() {
 RANGE=""
 BASE_FILE="/tmp/project-brains/session-${SID}.head"
 if [ -f "$BASE_FILE" ]; then
-  read -r BASE_ROOT BASE_HEAD < "$BASE_FILE" || true
+  # 格式是 "ROOT HEAD"(printf '%s %s'):ROOT 可能含空格,HEAD 必是最后一个字段
+  BASE_LINE="$(head -1 "$BASE_FILE" 2>/dev/null || true)"
+  BASE_HEAD="${BASE_LINE##* }"; BASE_ROOT="${BASE_LINE% *}"
   if [ "$BASE_ROOT" = "$ROOT" ] && git -C "$ROOT" cat-file -e "${BASE_HEAD}^{commit}" 2>/dev/null; then
     RANGE="${BASE_HEAD}..HEAD"
     [ -z "$(git -C "$ROOT" rev-list "$RANGE" 2>/dev/null)" ] && brain_dirty_or_exit   # 本会话没提交 → 只查 .brain 收口
   fi
 fi
-# 追责基准 = 最后一个碰 .brain 之外文件的"工作提交"。纯 .brain 提交(收口词条/证据)
+# 追责基准 = 本会话是否落了 .brain 之外的"工作改动"。纯 .brain 提交(收口词条/证据)
 # 是记账不是工作,不该反过来要求为它再举证——否则收口本身会触发新一轮拦截。
+# 2026-08-25 二轮收洞:不能用 `log -1 -- pathspec` 判(git 历史简化会把 merge 藏掉、
+# 返回被合分支的旧时间戳,gate1/gate4 双穿透)。改为:基线树 vs HEAD 树的 diff 说了算,
+# 时间戳取范围内最新提交(不带 pathspec,免疫简化)。
 if [ -n "$RANGE" ]; then
-  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --format=%ct "$RANGE" -- . ':(exclude).brain' 2>/dev/null || true)"
+  if [ -n "$(git -C "$ROOT" diff --name-only "$BASE_HEAD" HEAD -- . ':(exclude).brain' 2>/dev/null | head -1)" ]; then
+    LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --format=%ct "$RANGE" 2>/dev/null || true)"
+  else
+    LAST_COMMIT_TS=""
+  fi
 else
-  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --since=12.hours --format=%ct -- . ':(exclude).brain' 2>/dev/null || true)"
+  # 12h 兜底窗(仅无基线的老会话走到):--full-history 尽量少被简化,尽力而为
+  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --full-history --since=12.hours --format=%ct -- . ':(exclude).brain' 2>/dev/null || true)"
 fi
 [ -n "$LAST_COMMIT_TS" ] || brain_dirty_or_exit      # 12h 内无 commit → 只查 .brain 收口
 

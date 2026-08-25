@@ -22,8 +22,20 @@ done
 [ -n "$SOURCE" ] || SOURCE="$(basename "$ROOT")"
 QUEUE="$HOME/.project-brains/wiki-sync-queue"
 
+src_for() { # $1=md file path → 该文件所属项目的名字(按路径反查登记表,兜底 basename)
+  local root="${1%/.brain/wiki/*}" s=""
+  for reg in "$HOME/.boss/registry.tsv" "$HOME/.project-brains/registry.tsv"; do
+    [ -f "$reg" ] || continue
+    s="$(awk -F'\t' -v r="$root" '$0 !~ /^#/ && $1 == r {print $2; exit}' "$reg")"
+    [ -n "$s" ] && break
+  done
+  printf '%s' "${s:-$(basename "$root")}"
+}
+
 push_one() { # $1=md file path → 0 ok / 1 fail / 2 skipped
-  local f="$1" slug title
+  # source 按文件自身路径定,不用当前项目的 SOURCE:队列里可能躺着别的项目的失败词条,
+  # 用当前项目名会"冒名顶替"、再被同 slug 覆盖(2026-08-25 二轮审计)。
+  local f="$1" slug title src idx
   slug="$(basename "$f" .md)"
   case "$slug" in index|log) return 2;; esac
   head -5 "$f" | grep -q '^sync: *false' && return 2
@@ -31,11 +43,13 @@ push_one() { # $1=md file path → 0 ok / 1 fail / 2 skipped
   if grep -qE 'cfk_[A-Za-z0-9]{20,}|BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{30,}|(password|passwd|secret) *[:=] *[^ ]{8,}' "$f"; then
     echo "  SKIP(防泄闸) $slug" >&2; return 2
   fi
+  src="$(src_for "$f")"
   title="$(grep -m1 '^# ' "$f" | sed 's/^# //')"
   [ -n "$title" ] || title="$slug"
   local hook=""
-  [ -f "$ROOT/.brain/wiki/index.md" ] && hook="$(grep -m1 -- "$slug" "$ROOT/.brain/wiki/index.md" | sed 's/.*— *//' | head -c 120)"
-  SLUG="$slug" TITLE="$title" HOOK="$hook" SRC="$SOURCE" F="$f" python3 - <<'PY'
+  idx="$(dirname "$f")/index.md"
+  [ -f "$idx" ] && hook="$(grep -m1 -- "$slug" "$idx" | sed 's/.*— *//' | head -c 120)"
+  SLUG="$slug" TITLE="$title" HOOK="$hook" SRC="$src" F="$f" python3 - <<'PY'
 import json,os,sys,urllib.request,datetime
 body=json.dumps({"source":os.environ["SRC"],"slug":os.environ["SLUG"],"title":os.environ["TITLE"],
   "hook":os.environ["HOOK"],"tags":[],"date":datetime.date.fromtimestamp(os.path.getmtime(os.environ["F"])).isoformat(),
