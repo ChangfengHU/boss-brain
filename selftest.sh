@@ -60,6 +60,22 @@ if [ -f "$HOME/.claude/skills/project-brains/SKILL.md" ]; then
   diff -q "$SRC/src/skill/project-brains/SKILL.md" "$HOME/.claude/skills/project-brains/SKILL.md" >/dev/null 2>&1 \
     && ok "SKILL.md 无漂移" || bad "SKILL.md 无漂移" "src 与 ~/.claude/skills 副本不同,同步后再测"
 fi
+# codex 侧同样是"线上跑的"——2026-08-25 审计:codex 副本停在旧版(缺 gate5 整章)而自测仍全绿,
+# 正是 2026-08-23 同款事故换了个目录再犯。skill/prompts/宪法/版本文件一并盯住。
+if [ -d "$HOME/.codex" ]; then
+  diff -q "$SRC/src/skill/project-brains/SKILL.md" "$HOME/.codex/skills/project-brains/SKILL.md" >/dev/null 2>&1 \
+    && ok "codex SKILL.md 无漂移" || bad "codex SKILL.md 无漂移" "重跑 src/install.sh 同步 codex 副本"
+  for c in "$SRC/src/commands/"*.md; do
+    b="$(basename "$c")"
+    [ -f "$HOME/.codex/prompts/$b" ] || { bad "codex prompts/$b 无漂移" "未安装"; continue; }
+    diff -q "$c" "$HOME/.codex/prompts/$b" >/dev/null 2>&1 \
+      && ok "codex prompts/$b 无漂移" || bad "codex prompts/$b 无漂移" "重跑 src/install.sh 同步"
+  done
+  grep -qF "立即 push" "$HOME/.codex/AGENTS.md" 2>/dev/null \
+    && ok "codex 宪法含现行 push 政策" || bad "codex 宪法含现行 push 政策" "AGENTS.md 宪法块是旧版"
+fi
+[ "$(cat "$HOME/.project-brains/version" 2>/dev/null)" = "$(cat "$SRC/src/VERSION" 2>/dev/null)" ] \
+  && ok "version 记账与 src/VERSION 一致" || bad "version 记账与 src/VERSION 一致" "重跑 src/install.sh"
 
 echo "== 承诺 1:有 commit 就必须有证据记录 =="
 R="$(mkrepo p1)"
@@ -153,6 +169,33 @@ say_block "声明还是原样模板(含占位)→ 拦截" "$(run "$R")"
 printf 'provides\treal.thing\t-\t真实声明\n' > "$R/.brain/capabilities.tsv"
 commit_brain "$R"
 say_pass  "换成真实声明后 → 放行" "$(run "$R")"
+
+echo "== 承诺 11:只提交状态卡骗不过证据门禁(2026-08-25 收洞)=="
+# 旧实现把"最后一个碰 .brain 的 commit"当证据时间戳:补一个 STATE-only commit
+# 就能让零证据的工作 commit 溜过 gate1。现在只认证据文件本身的 commit。
+R="$(mkrepo p11)"; ev "$R" none; card "$R"; commit_brain "$R"
+work_commit_later "$R" "工作提交" 120
+echo "改现状" >> "$R/.brain/STATE.md"
+git -C "$R" add .brain/STATE.md >/dev/null
+GIT_AUTHOR_DATE="$(date -d '+240 seconds' +%s) +0000" GIT_COMMITTER_DATE="$(date -d '+240 seconds' +%s) +0000" \
+  git -C "$R" commit -qm "只动状态卡" >/dev/null
+say_block "STATE-only commit 不能顶掉证据新鲜度 → 仍拦截" "$(run "$R")"
+
+echo "== 承诺 12:compact/resume 不重置会话基线(2026-08-25 收洞)=="
+R="$(mkrepo p12)"; SID="st-base-$RANDOM"
+ss() { printf '{"cwd":"%s","session_id":"%s"}' "$R" "$SID" | bash "$H/session-start.sh" >/dev/null 2>&1; }
+ss; B1="$(cat "/tmp/project-brains/session-$SID.head")"
+echo y >> "$R/code.txt"; git -C "$R" add -A >/dev/null; git -C "$R" commit -qm mid >/dev/null
+ss   # 模拟 compact 再次触发 SessionStart
+B2="$(cat "/tmp/project-brains/session-$SID.head")"
+[ "$B1" = "$B2" ] && ok "同一会话基线只写一次,compact 不覆盖" || bad "同一会话基线只写一次,compact 不覆盖" "基线被重写:$B1 → $B2"
+rm -f "/tmp/project-brains/session-$SID.head"
+
+echo "== 承诺 13:开场注入文本干净(TASKS.md 零活跃任务不出垃圾行)=="
+R="$(mkrepo p13)"; printf '# 任务\n- [x] 已完成的任务\n' > "$R/.brain/TASKS.md"
+O="$(printf '{"cwd":"%s","session_id":"st-clean"}' "$R" | bash "$H/session-start.sh" 2>&1)"
+printf '%s' "$O" | grep -q "活跃任务 0 个" && ok "零活跃任务时输出 0 个" || bad "零活跃任务时输出 0 个" "$O"
+printf '%s' "$O" | grep -qE "integer expression|^0$" && bad "无垃圾行/无报错" "$O" || ok "无垃圾行/无报错"
 
 echo
 echo "结果:$PASS 通过,$FAIL 失败"

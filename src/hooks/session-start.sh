@@ -34,7 +34,11 @@ try: print(json.load(sys.stdin).get("session_id",""))
 except Exception: print("")' 2>/dev/null)"
 if [ -n "$SID" ] && [ -n "$ROOT" ] && git -C "$ROOT" rev-parse HEAD >/dev/null 2>&1; then
   mkdir -p /tmp/project-brains
-  printf '%s %s\n' "$ROOT" "$(git -C "$ROOT" rev-parse HEAD)" > "/tmp/project-brains/session-$SID.head" 2>/dev/null || true
+  # 基线只写一次:SessionStart 在 compact/resume 时也会触发,重写基线会把
+  # 长自主会话前半程的 commit 划出审计窗口,收工门禁整体漏拦(2026-08-25 审计)。
+  # 一个会话的起点 HEAD 是不可变事实,文件已存在就绝不覆盖。
+  [ -f "/tmp/project-brains/session-$SID.head" ] || \
+    printf '%s %s\n' "$ROOT" "$(git -C "$ROOT" rev-parse HEAD)" > "/tmp/project-brains/session-$SID.head" 2>/dev/null || true
 fi
 
 if [ -n "$brain_dir" ]; then
@@ -47,7 +51,9 @@ if [ -n "$brain_dir" ]; then
     else
       pattern=' active$'
     fi
-    active="$(grep -cE "$pattern" "$brain_dir/TASKS.md" 2>/dev/null || echo 0)"
+    # grep -c 无命中时既输出 0 又退出 1,接 || echo 0 会变成两行"0\n0"污染注入文本
+    active="$(grep -cE "$pattern" "$brain_dir/TASKS.md" 2>/dev/null || true)"
+    [ -n "$active" ] || active=0
     echo "活跃任务 ${active} 个 (.brain/TASKS.md):"
     grep -E "$pattern" "$brain_dir/TASKS.md" 2>/dev/null | head -10
     if [ "${active:-0}" -gt 1 ]; then

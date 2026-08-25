@@ -12,7 +12,13 @@ set -a; . "$ENVF"; set +a
 
 ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -n "$ROOT" ] && [ -d "$ROOT/.brain/wiki" ] || exit 0
-SOURCE="$(grep -P "^$(printf '%s' "$ROOT")\t" "$HOME/.project-brains/registry.tsv" 2>/dev/null | head -1 | cut -f2)"
+# 项目名以 boss 登记表为单一事实来源(session-start 同款优先级),brain 自家两列表只做兜底
+SOURCE=""
+for REG in "$HOME/.boss/registry.tsv" "$HOME/.project-brains/registry.tsv"; do
+  [ -f "$REG" ] || continue
+  SOURCE="$(awk -F'\t' -v r="$ROOT" '$0 !~ /^#/ && $1 == r {print $2; exit}' "$REG")"
+  [ -n "$SOURCE" ] && break
+done
 [ -n "$SOURCE" ] || SOURCE="$(basename "$ROOT")"
 QUEUE="$HOME/.project-brains/wiki-sync-queue"
 
@@ -45,19 +51,26 @@ PY
 }
 
 OK=0; FAIL=0; SKIP=0
-# retry queued files first
+# retry queued files first。三条纪律(2026-08-25 审计):
+#   ①队列先去重——此前失败一次追加一行,重试与主循环还会双推;
+#   ②本项目 wiki 目录下的文件跳过重试(主循环马上会推,同轮不推两遍);
+#   ③rc=2(index/防泄闸这类永久跳过)直接出队,不再无限滞留。
 if [ -f "$QUEUE" ]; then
+  sort -u "$QUEUE" -o "$QUEUE" 2>/dev/null || true
   TMPQ="$(mktemp)"; while IFS= read -r qf; do
     [ -f "$qf" ] || continue
-    if push_one "$qf"; then OK=$((OK+1)); else echo "$qf" >> "$TMPQ"; fi
+    case "$qf" in "$ROOT/.brain/wiki/"*) continue;; esac
+    push_one "$qf"; rc=$?
+    case $rc in 0) OK=$((OK+1));; 2) : ;; *) echo "$qf" >> "$TMPQ";; esac
   done < "$QUEUE"
-  mv "$TMPQ" "$QUEUE"; [ -s "$QUEUE" ] || rm -f "$QUEUE"
+  mv "$TMPQ" "$QUEUE"
 fi
 for f in "$ROOT/.brain/wiki/"*.md; do
   [ -f "$f" ] || continue
   push_one "$f"; rc=$?
   case $rc in 0) OK=$((OK+1));; 2) SKIP=$((SKIP+1));;
-    *) FAIL=$((FAIL+1)); echo "$f" >> "$QUEUE";; esac
+    *) FAIL=$((FAIL+1)); grep -qxF "$f" "$QUEUE" 2>/dev/null || echo "$f" >> "$QUEUE";; esac
 done
+[ -s "$QUEUE" ] || rm -f "$QUEUE" 2>/dev/null
 echo "[wiki-sync] $SOURCE: 推送 $OK,跳过 $SKIP,失败入队 $FAIL"
 exit 0

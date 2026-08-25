@@ -54,22 +54,26 @@ if [ -f "$BASE_FILE" ]; then
     [ -z "$(git -C "$ROOT" rev-list "$RANGE" 2>/dev/null)" ] && brain_dirty_or_exit   # 本会话没提交 → 只查 .brain 收口
   fi
 fi
+# 追责基准 = 最后一个碰 .brain 之外文件的"工作提交"。纯 .brain 提交(收口词条/证据)
+# 是记账不是工作,不该反过来要求为它再举证——否则收口本身会触发新一轮拦截。
 if [ -n "$RANGE" ]; then
-  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --format=%ct "$RANGE" 2>/dev/null || true)"
+  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --format=%ct "$RANGE" -- . ':(exclude).brain' 2>/dev/null || true)"
 else
-  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --since=12.hours --format=%ct 2>/dev/null || true)"
+  LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --since=12.hours --format=%ct -- . ':(exclude).brain' 2>/dev/null || true)"
 fi
 [ -n "$LAST_COMMIT_TS" ] || brain_dirty_or_exit      # 12h 内无 commit → 只查 .brain 收口
 
-# newest evidence: max of file mtimes and the last commit touching .brain
-# (counting the .brain commit avoids re-blocking right after evidence is committed)
+# newest evidence: max of file mtimes and the last commit touching the evidence files
+# (counting that commit avoids re-blocking right after evidence is committed).
+# 2026-08-25 收洞:此前这里数的是"最后一个碰 .brain 的 commit"——只提交一次 STATE.md
+# 就能把 EV_TS 顶到最新,工作 commit 可以零证据溜过 gate1。只认证据文件本身的 commit。
 EV_TS=0; NEWEST=""
 for f in "$ROOT/.brain/evidence.jsonl" "$ROOT/.brain/tasks"/*/evidence.jsonl; do
   [ -f "$f" ] || continue
   t="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)"
   if [ "$t" -gt "$EV_TS" ]; then EV_TS="$t"; NEWEST="$f"; fi
 done
-BRAIN_TS="$(git -C "$ROOT" log -1 --format=%ct -- .brain 2>/dev/null || echo 0)"
+BRAIN_TS="$(git -C "$ROOT" log -1 --format=%ct -- .brain/evidence.jsonl '.brain/tasks/*/evidence.jsonl' 2>/dev/null || echo 0)"
 [ -n "$BRAIN_TS" ] && [ "$BRAIN_TS" -gt "$EV_TS" ] && EV_TS="$BRAIN_TS"
 
 # gate 1: evidence freshness
