@@ -66,6 +66,15 @@ fi
 # 2026-08-25 二轮收洞:不能用 `log -1 -- pathspec` 判(git 历史简化会把 merge 藏掉、
 # 返回被合分支的旧时间戳,gate1/gate4 双穿透)。改为:基线树 vs HEAD 树的 diff 说了算,
 # 时间戳取范围内最新提交(不带 pathspec,免疫简化)。
+# 认领判定:本仓没有本会话基线 = 会话不是在这里开场的。只有本会话确实"认领"过它
+# (boss 注入钩子在 @项目名 切入时登记 /tmp/project-brains/boss-touched-<sid>)才继续
+# 用兜底窗审计;否则多半是 shell cd 路过**别的会话**的在途工作区——谁的仓谁负责,
+# 立即放行。2026-08-25 实锤:不加这道,agent 会被要求替别的会话写状态卡/证据,任务漂移。
+# (无 boss 的裸 brain 机器上这会放宽 home 开场会话的门禁;本机群 boss/brain 恒成对安装。)
+if [ -z "$RANGE" ]; then
+  grep -qxF "$ROOT" "/tmp/project-brains/boss-touched-${SID}" 2>/dev/null || exit 0
+fi
+
 if [ -n "$RANGE" ]; then
   if [ -n "$(git -C "$ROOT" diff --name-only "$BASE_HEAD" HEAD -- . ':(exclude).brain' 2>/dev/null | head -1)" ]; then
     LAST_COMMIT_TS="$(git -C "$ROOT" log -1 --format=%ct "$RANGE" 2>/dev/null || true)"
@@ -95,7 +104,8 @@ BRAIN_TS="$(git -C "$ROOT" log -1 --format=%ct -- .brain/evidence.jsonl '.brain/
 if [ "$LAST_COMMIT_TS" -gt "$EV_TS" ]; then
   if [ -n "$RANGE" ]; then SHORT="$(git -C "$ROOT" log --oneline "$RANGE" | head -5)"
   else SHORT="$(git -C "$ROOT" log --since=12.hours --oneline | head -5)"; fi
-  block "project-brains 收工检查: 本工作空间有新 commit 但未落证据记录。请向 .brain/evidence.jsonl(或对应任务目录)追加一条含真实验证命令与 exit code、且带 wiki 判断字段的 JSON 证据,并向 .brain/dev-log/<今天日期>.md 追加一段人读记录,再结束回合。近期 commit:
+  block "project-brains 收工检查: 本工作空间有新 commit 但未落证据记录。请向 .brain/evidence.jsonl(或对应任务目录)追加一条含真实验证命令与 exit code、且带 wiki 判断字段的 JSON 证据,并向 .brain/dev-log/<今天日期>.md 追加一段人读记录,再结束回合。
+收工完整清单(一次做完,别等逐关拦):①证据行(含 wiki 判断字段)②dev-log ③状态卡「现状/下一步」刷新 ④能力声明(仅首次)⑤.brain 收口 commit 并 push。近期 commit:
 $SHORT"
 fi
 

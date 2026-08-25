@@ -47,7 +47,12 @@ work_commit_later() { # $1=仓库 $2=消息 $3=推后几秒
   GIT_COMMITTER_DATE="$(date -d "+${3:-120} seconds" +%s) +0000" \
     git -C "$1" commit -qm "$2" >/dev/null
 }
-run() { printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$1" "${2:-nosid}" | bash "$H/stop-evidence-check.sh" 2>&1; }
+# run() 默认"认领"该仓(写 boss-touched 标记)= 模拟真实工作流:会话确实在这个仓干活。
+# 未认领的"路过"场景由承诺 15 用 run_raw 单测。
+mark() { mkdir -p /tmp/project-brains; grep -qxF "$1" "/tmp/project-brains/boss-touched-$2" 2>/dev/null || printf '%s\n' "$1" >> "/tmp/project-brains/boss-touched-$2"; }
+run() { mark "$1" "${2:-nosid}"; printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$1" "${2:-nosid}" | bash "$H/stop-evidence-check.sh" 2>&1; }
+run_raw() { printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$1" "${2:-nosid}" | bash "$H/stop-evidence-check.sh" 2>&1; }
+rm -f /tmp/project-brains/boss-touched-nosid   # 清上次残留,避免跨 run 污染
 
 echo "== 承诺 0:测的必须是线上跑的(src 与已安装副本无漂移)=="
 # 2026-08-23 真踩过:改了 src/hooks 忘同步 hooks/,自测全绿但改动根本没生效。
@@ -245,6 +250,17 @@ GIT_AUTHOR_DATE="$(date -d '+120 seconds' +%s) +0000" GIT_COMMITTER_DATE="$(date
   git -C "$d" commit -qm work2 >/dev/null
 say_block "空格路径 + 有 commit 无证据 → 仍拦截" "$(run "$d" "$SIDS")"
 rm -f "/tmp/project-brains/session-$SIDS.head"
+
+echo "== 承诺 15:cd 路过别人的仓不背锅(2026-08-25 任务漂移专项)=="
+# 本会话没在这个仓开场(无基线)也没 @ 认领过它 → 即使它有无证据的新 commit,也放行——
+# 那是别的会话的在途工作,替人写状态卡/证据 = 任务漂移 + 踩乱别人工作区。
+R="$(mkrepo p15)"   # 有 commit、零证据:若被认领必拦
+SIDF="st-foreign-$RANDOM"
+O="$(run_raw "$R" "$SIDF")";
+say_pass "无基线且未认领 → 路过放行" "$O"
+mark "$R" "$SIDF"
+say_block "同一仓一旦认领 → 照常拦" "$(run_raw "$R" "$SIDF")"
+rm -f "/tmp/project-brains/boss-touched-$SIDF"
 
 echo
 echo "结果:$PASS 通过,$FAIL 失败"
