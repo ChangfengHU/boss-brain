@@ -64,26 +64,35 @@ for sd in "$HOME/.codex/skills" "$HOME/.config/opencode/skills"; do
   [ "$miss" -eq 0 ] && ok "$(basename "$(dirname "$sd")"): 五命令 skill 形态已安装" || bad "$(basename "$(dirname "$sd")"): 命令 skill 缺失"
 done
 
-# stop hook behavior (5 deterministic cases: 3 gates + pass + anti-loop)
+# stop hook behavior(与 0.7.0 语义对齐:认领判定需要基线/touched,拦截协议 = stderr + exit 2;
+# 探针自带 session_id 与基线夹具,状态目录隔离到临时 PB_STATE_DIR,不碰真会话状态)
 sh="$HOME/.project-brains/hooks/stop-evidence-check.sh"
 if [ -x "$sh" ]; then
-  tr="$(mktemp -d)"; ( cd "$tr" && git init -q -b main && git config user.email t@t && git config user.name t \
-    && mkdir .brain && echo x > f && git add f && git commit -q -m t )
-  o1="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
-  printf '%s' "$o1" | grep -q '"decision": *"block"' && ok "stop-hook: 有 commit 无证据 → block" || bad "stop-hook: 未拦截"
-  sleep 1; printf '{"summary":"t","wiki":"none"}\n' > "$tr/.brain/evidence.jsonl"
-  o2="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
-  printf '%s' "$o2" | grep -q '未提交' && ok "stop-hook: .brain 脏 → block(收口闸)" || bad "stop-hook: 收口闸失效"
-  ( cd "$tr" && git add .brain && git commit -q -m brain )
-  o3="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
-  [ -z "$o3" ] && ok "stop-hook: 证据齐+wiki已判+已收口 → 放行" || bad "stop-hook: 误拦截 ($o3)"
-  o4="$(printf '{"cwd":"%s","stop_hook_active":true}' "$tr" | "$sh")"
-  [ -z "$o4" ] && ok "stop-hook: stop_hook_active → 防循环放行" || bad "stop-hook: 循环风险"
+  tr="$(mktemp -d)"; export PB_STATE_DIR="$tr/state"; mkdir -p "$PB_STATE_DIR"
+  DSID="doctor-$$"
+  ( cd "$tr" && git init -q -b main && git config user.email t@t && git config user.name t \
+    && mkdir .brain && printf '# 卡\n## 现状\nx\n## 下一步\n1. x\n' > .brain/STATE.md \
+    && printf 'provides\tdoc.thing\t-\t探针夹具\n' > .brain/capabilities.tsv \
+    && git add -A && git commit -q -m init )
+  printf '%s %s\n' "$tr" "$(git -C "$tr" rev-parse HEAD)" > "$PB_STATE_DIR/session-$DSID.head"
+  ( cd "$tr" && echo work > f && git add f && git commit -q -m work )
+  probe() { printf '{"cwd":"%s","stop_hook_active":%s,"session_id":"%s"}' "$tr" "$2" "$DSID" | "$sh" 2>&1; }
+  o1="$(probe x false)"; rc=$?
+  { [ "$rc" -ne 0 ] && printf '%s' "$o1" | grep -q '收工检查'; } && ok "stop-hook: 有 commit 无证据 → 拦截" || bad "stop-hook: 未拦截"
+  sleep 1; printf '{"summary":"t","verify":"cmd → ok","exit":0,"wiki":"none"}\n' > "$tr/.brain/evidence.jsonl"
+  touch "$tr/.brain/STATE.md"
+  o2="$(probe x false)"; rc=$?
+  { [ "$rc" -ne 0 ] && printf '%s' "$o2" | grep -q '未提交'; } && ok "stop-hook: .brain 脏 → 拦截(收口闸)" || bad "stop-hook: 收口闸失效"
+  ( cd "$tr" && touch .brain/STATE.md && git add .brain && git commit -q -m brain )
+  o3="$(probe x false)"; rc=$?
+  { [ "$rc" -eq 0 ] && [ -z "$o3" ]; } && ok "stop-hook: 证据齐+已收口 → 放行" || bad "stop-hook: 误拦截 ($o3)"
+  o4="$(probe x true)"; rc=$?
+  [ "$rc" -eq 0 ] && ok "stop-hook: stop_hook_active → 防循环放行" || bad "stop-hook: 循环风险"
   sleep 1; printf '{"summary":"no-wiki-field"}\n' > "$tr/.brain/evidence.jsonl"
-  ( cd "$tr" && git add .brain && git commit -q -m brain2 )
-  o5="$(printf '{"cwd":"%s","stop_hook_active":false}' "$tr" | "$sh")"
-  printf '%s' "$o5" | grep -q 'wiki' && ok "stop-hook: 证据缺 wiki 判断 → block(wiki闸)" || bad "stop-hook: wiki闸失效"
-  rm -rf "$tr"
+  ( cd "$tr" && touch .brain/STATE.md && git add .brain && git commit -q -m brain2 )
+  o5="$(probe x false)"; rc=$?
+  { [ "$rc" -ne 0 ] && printf '%s' "$o5" | grep -q 'wiki'; } && ok "stop-hook: 证据缺 wiki 判断 → 拦截(wiki闸)" || bad "stop-hook: wiki闸失效"
+  unset PB_STATE_DIR; rm -rf "$tr"
 else
   bad "stop-hook: 脚本缺失"
 fi

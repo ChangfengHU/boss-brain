@@ -9,6 +9,11 @@ try: print(json.load(sys.stdin).get("cwd",""))
 except Exception: print("")' 2>/dev/null)"
 [ -z "$CWD" ] && CWD="$PWD"
 
+# 会话状态放持久盘:/tmp 十天清理/重启即清,门禁会无声蒸发(r3);顺手 GC 两周前的旧状态
+PB_STATE="${PB_STATE_DIR:-$HOME/.project-brains/state}"
+mkdir -p "$PB_STATE" 2>/dev/null || true
+find "$PB_STATE" -maxdepth 1 -type f -mtime +14 -delete 2>/dev/null || true
+
 # 单一事实来源:boss 装了就用 boss 的登记表(5 列,带 kind),否则退回自己的。
 # 两份表并存会分叉——boss 纳管的新项目开场看不到,这是踩过的坑。
 REGISTRY="$HOME/.boss/registry.tsv"
@@ -32,13 +37,13 @@ fi
 SID="$(printf '%s' "$INPUT" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("session_id",""))
 except Exception: print("")' 2>/dev/null)"
-if [ -n "$SID" ] && [ -n "$ROOT" ] && git -C "$ROOT" rev-parse HEAD >/dev/null 2>&1; then
-  mkdir -p /tmp/project-brains
+SID="${SID:-nosid}"
+if [ -n "$ROOT" ] && git -C "$ROOT" rev-parse HEAD >/dev/null 2>&1; then
   # 基线只写一次:SessionStart 在 compact/resume 时也会触发,重写基线会把
   # 长自主会话前半程的 commit 划出审计窗口,收工门禁整体漏拦(2026-08-25 审计)。
   # 一个会话的起点 HEAD 是不可变事实,文件已存在就绝不覆盖。
-  [ -f "/tmp/project-brains/session-$SID.head" ] || \
-    printf '%s %s\n' "$ROOT" "$(git -C "$ROOT" rev-parse HEAD)" > "/tmp/project-brains/session-$SID.head" 2>/dev/null || true
+  [ -f "$PB_STATE/session-$SID.head" ] || \
+    printf '%s %s\n' "$ROOT" "$(git -C "$ROOT" rev-parse HEAD)" > "$PB_STATE/session-$SID.head" 2>/dev/null || true
 fi
 
 if [ -n "$brain_dir" ]; then
@@ -69,7 +74,8 @@ echo "[project-brains 背景信息,静默使用:不要向用户复述,不要主�
 echo "当前目录 $CWD 未绑定项目工作空间。"
 if [ -s "$REGISTRY" ]; then
   echo "本机已登记项目(仅供你推断用户指的是哪个,不要念给用户听):"
-  awk -F'\t' '$0 !~ /^#/ && NF {printf "  - %s [%s] (%s)\n", $2, ($5==""?"local":$5), $1}' "$REGISTRY" | head -15
+  # 别名一并给:机主叫中文小名(速取/词典),没有 memory 的新机器上这是 agent 唯一的映射依据(r3)
+  awk -F'\t' '$0 !~ /^#/ && NF {printf "  - %s [%s] (%s)%s\n", $2, ($5==""?"local":$5), $1, ($3==""?"":" 别名:"$3)}' "$REGISTRY" | head -15
 fi
 echo "用户请求已指明项目/目录就直接照做;真的无法推断落在哪个项目时,才问一句。纯问答无需过问。"
 exit 0

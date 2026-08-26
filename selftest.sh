@@ -9,10 +9,11 @@ set -u
 SRC="$(cd "$(dirname "$0")" && pwd)"
 H="$SRC/hooks"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+export PB_STATE_DIR="$T/pbstate"; mkdir -p "$PB_STATE_DIR"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL %s\n     %s\n' "$1" "${2:-}"; }
-blocked()   { printf '%s' "$1" | grep -q '"decision": *"block"' ; }
+blocked()   { printf '%s' "$1" | grep -q '收工检查' ; }   # 协议=stderr+exit2(CC/codex 通用),run() 已并流
 say_block() { if blocked "$2"; then ok "$1"; else bad "$1" "应当拦截,实际放行:${2:0:120}"; fi; }
 say_pass()  { if blocked "$2"; then bad "$1" "应当放行,实际拦截:${2:0:160}"; else ok "$1"; fi; }
 
@@ -49,10 +50,10 @@ work_commit_later() { # $1=仓库 $2=消息 $3=推后几秒
 }
 # run() 默认"认领"该仓(写 boss-touched 标记)= 模拟真实工作流:会话确实在这个仓干活。
 # 未认领的"路过"场景由承诺 15 用 run_raw 单测。
-mark() { mkdir -p /tmp/project-brains; grep -qxF "$1" "/tmp/project-brains/boss-touched-$2" 2>/dev/null || printf '%s\n' "$1" >> "/tmp/project-brains/boss-touched-$2"; }
+mark() { grep -qxF "$1" "$PB_STATE_DIR/boss-touched-$2" 2>/dev/null || printf '%s\n' "$1" >> "$PB_STATE_DIR/boss-touched-$2"; }
 run() { mark "$1" "${2:-nosid}"; printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$1" "${2:-nosid}" | bash "$H/stop-evidence-check.sh" 2>&1; }
 run_raw() { printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$1" "${2:-nosid}" | bash "$H/stop-evidence-check.sh" 2>&1; }
-rm -f /tmp/project-brains/boss-touched-nosid   # 清上次残留,避免跨 run 污染
+rm -f "$PB_STATE_DIR/boss-touched-nosid"
 
 echo "== 承诺 0:测的必须是线上跑的(src 与已安装副本无漂移)=="
 # 2026-08-23 真踩过:改了 src/hooks 忘同步 hooks/,自测全绿但改动根本没生效。
@@ -132,30 +133,30 @@ say_pass  "收口后 → 放行" "$(run "$R")"
 
 # 4b:没有工作 commit 的会话(纯问答里「记下来」)写了 .brain 也必须收口
 R="$(mkrepo p4b)"; ev "$R" none; card "$R"; commit_brain "$R"
-SID4="sess4-$RANDOM"; mkdir -p /tmp/project-brains
-printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "/tmp/project-brains/session-$SID4.head"
+SID4="sess4-$RANDOM"; printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "$PB_STATE_DIR/session-$SID4.head"
 echo "词条" > "$R/.brain/wiki-note.md"
 say_block "无 commit 会话写 .brain 未提交 → 拦截" "$(run "$R" "$SID4")"
 commit_brain "$R"
 say_pass  "收口后 → 放行" "$(run "$R" "$SID4")"
-rm -f "/tmp/project-brains/session-$SID4.head"
+rm -f "$PB_STATE_DIR/session-$SID4.head"
 
 echo "== 承诺 5:不是 brain 工作空间就完全不打扰 =="
 mkdir -p "$T/plain"; git -C "$T/plain" init -q
 git -C "$T/plain" config user.email t@t; git -C "$T/plain" config user.name t
 echo x > "$T/plain/f"; git -C "$T/plain" add -A >/dev/null; git -C "$T/plain" commit -qm x >/dev/null
-O="$(run "$T/plain")"; { [ -z "$O" ] && ! blocked "$O"; } && ok "无 .brain 的 git 仓库静默放行" || bad "无 .brain 的 git 仓库静默放行" "$O"
+# 用独立 sid:默认 nosid 的 touched 会累积此前各案例的认领仓,而 cwd 非仓时
+# 新语义(承诺16)会去查认领仓——共享 sid 的"静默"假设不再成立,这正是旗舰门禁生效的证明
+O="$(run "$T/plain" "p5a-$RANDOM")"; { [ -z "$O" ] && ! blocked "$O"; } && ok "无 .brain 的 git 仓库静默放行" || bad "无 .brain 的 git 仓库静默放行" "$O"
 mkdir -p "$T/nogit"
-O="$(run "$T/nogit")"; [ -z "$O" ] && ok "非 git 目录静默放行" || bad "非 git 目录静默放行" "$O"
+O="$(run "$T/nogit" "p5b-$RANDOM")"; [ -z "$O" ] && ok "非 git 目录静默放行" || bad "非 git 目录静默放行" "$O"
 
 echo "== 承诺 6:并发会话不背别人的锅 =="
 R="$(mkrepo p6)"; ev "$R" none; card "$R"; commit_brain "$R"
-SID="sess-$RANDOM"; mkdir -p /tmp/project-brains
-printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "/tmp/project-brains/session-$SID.head"
+SID="sess-$RANDOM"; printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "$PB_STATE_DIR/session-$SID.head"
 say_pass "本会话基线之后没提交 → 放行" "$(run "$R" "$SID")"
 work_commit_later "$R" "基线之后的活" 120
 say_block "基线之后有提交 → 按本会话追责" "$(run "$R" "$SID")"
-rm -f "/tmp/project-brains/session-$SID.head"
+rm -f "$PB_STATE_DIR/session-$SID.head"
 
 echo "== 承诺 7:门禁不会把会话锁死 =="
 R="$(mkrepo p7)"
@@ -166,13 +167,13 @@ echo "== 承诺 8:开场就把「我在哪个项目」交给 agent =="
 R="$(mkrepo p8)"; card "$R"
 O="$(printf '{"cwd":"%s","session_id":"s8"}' "$R" | HOME="$T" bash "$H/session-start.sh" 2>&1)"
 printf '%s' "$O" | grep -q "project-brains" && ok "在 brain 工作空间输出上下文" || bad "在 brain 工作空间输出上下文" "$O"
-[ -f "/tmp/project-brains/session-s8.head" ] && ok "记录本会话基线 HEAD" || bad "记录本会话基线 HEAD" "基线文件没写"
-rm -f /tmp/project-brains/session-s8.head
+[ -f "$PB_STATE_DIR/session-s8.head" ] && ok "记录本会话基线 HEAD" || bad "记录本会话基线 HEAD" "基线文件没写"
+rm -f $PB_STATE_DIR/session-s8.head
 mkdir -p "$T/home2/.boss"
 printf '%s\tp8\t别名\t一句话定位\tlocal\n' "$R" > "$T/home2/.boss/registry.tsv"
 O="$(printf '{"cwd":"%s","session_id":"s8b"}' "$T/nogit" | HOME="$T/home2" bash "$H/session-start.sh" 2>&1)"
 printf '%s' "$O" | grep -q "p8" && ok "未绑定目录时列出 boss 登记的项目" || bad "未绑定目录时列出 boss 登记的项目" "$O"
-rm -f /tmp/project-brains/session-s8b.head
+rm -f $PB_STATE_DIR/session-s8b.head
 
 echo "== 承诺 9:托管型项目不在本地建 .brain =="
 mkdir -p "$T/ref"; git -C "$T/ref" init -q
@@ -218,21 +219,20 @@ GIT_AUTHOR_DATE="$(date -d '-1 day' +%s) +0000" GIT_COMMITTER_DATE="$(date -d '-
   git -C "$R" commit -qm "docs(brain)" >/dev/null
 # 证据/状态卡必须"真旧":文件 mtime 也在门禁判据里,不回拨的话夹具全在同一秒,复现不了穿透
 touch -d '-1 day' "$R/.brain/evidence.jsonl" "$R/.brain/STATE.md" "$R/.brain/dev-log/2026-01-01.md" 2>/dev/null
-SIDM="st-merge-$RANDOM"; mkdir -p /tmp/project-brains
-printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "/tmp/project-brains/session-$SIDM.head"
+SIDM="st-merge-$RANDOM"; printf '%s %s\n' "$R" "$(git -C "$R" rev-parse HEAD)" > "$PB_STATE_DIR/session-$SIDM.head"
 git -C "$R" merge -q --no-ff -m "merge feat" feat >/dev/null 2>&1
 say_block "会话内 merge 带入代码且证据更旧 → 拦截" "$(run "$R" "$SIDM")"
-rm -f "/tmp/project-brains/session-$SIDM.head"
+rm -f "$PB_STATE_DIR/session-$SIDM.head"
 
 echo "== 承诺 12:compact/resume 不重置会话基线(2026-08-25 收洞)=="
 R="$(mkrepo p12)"; SID="st-base-$RANDOM"
 ss() { printf '{"cwd":"%s","session_id":"%s"}' "$R" "$SID" | bash "$H/session-start.sh" >/dev/null 2>&1; }
-ss; B1="$(cat "/tmp/project-brains/session-$SID.head")"
+ss; B1="$(cat "$PB_STATE_DIR/session-$SID.head")"
 echo y >> "$R/code.txt"; git -C "$R" add -A >/dev/null; git -C "$R" commit -qm mid >/dev/null
 ss   # 模拟 compact 再次触发 SessionStart
-B2="$(cat "/tmp/project-brains/session-$SID.head")"
+B2="$(cat "$PB_STATE_DIR/session-$SID.head")"
 [ "$B1" = "$B2" ] && ok "同一会话基线只写一次,compact 不覆盖" || bad "同一会话基线只写一次,compact 不覆盖" "基线被重写:$B1 → $B2"
-rm -f "/tmp/project-brains/session-$SID.head"
+rm -f "$PB_STATE_DIR/session-$SID.head"
 
 echo "== 承诺 13:开场注入文本干净(TASKS.md 零活跃任务不出垃圾行)=="
 R="$(mkrepo p13)"; printf '# 任务\n- [x] 已完成的任务\n' > "$R/.brain/TASKS.md"
@@ -244,12 +244,12 @@ echo "== 承诺 14:含空格路径的工作空间门禁照常生效(2026-08-25 �
 mkdir -p "$T/my proj"; d="$T/my proj"
 git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
 mkdir -p "$d/.brain"; echo x > "$d/code.txt"; git -C "$d" add -A >/dev/null; git -C "$d" commit -qm work >/dev/null
-SIDS="st-space-$RANDOM"; printf '%s %s\n' "$d" "$(git -C "$d" rev-parse HEAD)" > "/tmp/project-brains/session-$SIDS.head"
+SIDS="st-space-$RANDOM"; printf '%s %s\n' "$d" "$(git -C "$d" rev-parse HEAD)" > "$PB_STATE_DIR/session-$SIDS.head"
 echo more >> "$d/code.txt"; git -C "$d" add -A >/dev/null
 GIT_AUTHOR_DATE="$(date -d '+120 seconds' +%s) +0000" GIT_COMMITTER_DATE="$(date -d '+120 seconds' +%s) +0000" \
   git -C "$d" commit -qm work2 >/dev/null
 say_block "空格路径 + 有 commit 无证据 → 仍拦截" "$(run "$d" "$SIDS")"
-rm -f "/tmp/project-brains/session-$SIDS.head"
+rm -f "$PB_STATE_DIR/session-$SIDS.head"
 
 echo "== 承诺 15:cd 路过别人的仓不背锅(2026-08-25 任务漂移专项)=="
 # 本会话没在这个仓开场(无基线)也没 @ 认领过它 → 即使它有无证据的新 commit,也放行——
@@ -260,7 +260,28 @@ O="$(run_raw "$R" "$SIDF")";
 say_pass "无基线且未认领 → 路过放行" "$O"
 mark "$R" "$SIDF"
 say_block "同一仓一旦认领 → 照常拦" "$(run_raw "$R" "$SIDF")"
-rm -f "/tmp/project-brains/boss-touched-$SIDF"
+rm -f "$PB_STATE_DIR/boss-touched-$SIDF"
+
+echo "== 承诺 16:旗舰工作流也有门禁(home 开场 @ 进仓,cwd 不在仓里)=="
+# r3 一天仿真:此前 cwd 非仓直接退出,五道 gate 全旁路,「记下来」零保障。
+# 现在:cwd 非仓 → 遍历本会话认领(touched)的仓逐个查。
+R="$(mkrepo p16)"   # 有工作 commit、零证据
+SIDH="st-home-$RANDOM"
+printf '%s\n' "$R" >> "$PB_STATE_DIR/boss-touched-$SIDH"
+mkdir -p "$T/homedir"
+O="$(printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$T/homedir" "$SIDH" | bash "$H/stop-evidence-check.sh" 2>&1)"
+say_block "home 收工:认领仓有无证据 commit → 拦" "$O"
+ev "$R" none; card "$R"; commit_brain "$R"
+O="$(printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$T/homedir" "$SIDH" | bash "$H/stop-evidence-check.sh" 2>&1)"
+say_pass "home 收工:补齐后 → 放行" "$O"
+# 「记下来」在 home 会话也要收口
+echo "词条" > "$R/.brain/wiki-home.md"
+O="$(printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$T/homedir" "$SIDH" | bash "$H/stop-evidence-check.sh" 2>&1)"
+say_block "home 会话「记下来」未收口 → 拦" "$O"
+commit_brain "$R"
+O="$(printf '{"cwd":"%s","stop_hook_active":false,"session_id":"%s"}' "$T/homedir" "$SIDH" | bash "$H/stop-evidence-check.sh" 2>&1)"
+say_pass "home 会话收口后 → 放行" "$O"
+rm -f "$PB_STATE_DIR/boss-touched-$SIDH"
 
 echo
 echo "结果:$PASS 通过,$FAIL 失败"

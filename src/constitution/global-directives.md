@@ -1,4 +1,4 @@
-# 行为宪法(project-brains v0.6.6)
+# 行为宪法(project-brains v0.7.0)
 
 ## 思维纪律
 
