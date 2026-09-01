@@ -1,0 +1,11 @@
+{
+  "name": "boss-brain",
+  "version": "0.1.0",
+  "description": "Machine-level project control and portable project memory for coding agents.",
+  "author": {
+    "name": "ChangfengHU"
+  },
+  "homepage": "https://github.com/ChangfengHU/boss-brain",
+  "repository": "https://github.com/ChangfengHU/boss-brain",
+  "license": "MIT"
+}

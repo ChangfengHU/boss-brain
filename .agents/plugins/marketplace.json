@@ -1,0 +1,20 @@
+{
+  "name": "boss-brain",
+  "interface": {
+    "displayName": "Boss Brain"
+  },
+  "plugins": [
+    {
+      "name": "boss-brain",
+      "source": {
+        "source": "local",
+        "path": "./plugins/boss-brain"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

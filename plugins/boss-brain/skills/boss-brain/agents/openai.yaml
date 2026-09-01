@@ -1,0 +1,6 @@
+interface:
+  display_name: "Boss Brain"
+  short_description: "Quiet project context and continuity safeguards"
+  default_prompt: "Use $boss-brain to inspect the current project's continuity state."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,14 @@
+{
+  "name": "boss-brain",
+  "owner": {
+    "name": "ChangfengHU"
+  },
+  "plugins": [
+    {
+      "name": "boss-brain",
+      "description": "Machine-level project control and portable project memory for coding agents.",
+      "version": "0.1.0",
+      "source": "./plugins/boss-brain"
+    }
+  ]
+}

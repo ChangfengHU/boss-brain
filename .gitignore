@@ -1,2 +1,12 @@
-# 本机数据,不是源码:登记表已迁到 ~/.boss/registry.tsv,这里只是历史残留
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+dist/
+build/
+*.zip
+*.tar.gz
+.env
+.env.*
 registry.tsv
+state/

@@ -1,0 +1,43 @@
+{
+  "description": "Boss Brain unified lifecycle hooks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook session-start",
+            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook session-start",
+            "timeout": 10,
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook prompt-submit",
+            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook prompt-submit",
+            "timeout": 10,
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook stop",
+            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook stop",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

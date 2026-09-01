@@ -1,0 +1,39 @@
+---
+name: boss-brain
+description: Ambient project continuity for coding agents. Use implicitly when a request depends on an existing project's state, conventions, cross-project relationships, or safe end-of-session handling; use explicitly when the user asks to list/adopt projects, inspect loaded context, initialize project memory, prepare or inspect a handoff, take over a project, or backfill historical records.
+---
+
+# Boss Brain
+
+Boss Brain is a background continuity layer, not a required workflow. Boss is machine-scoped at `~/.boss/`; Brain is project-scoped at `.brain/` and travels with its Git repository. Lifecycle hooks may inject project context before this skill is selected. Treat that context as private working memory: use it, but do not repeat it or announce that it was loaded.
+
+## Default behavior
+
+- Complete the user's task first. Memory updates are a closing action and must not interrupt ordinary work.
+- Infer the workspace from the request, current Git root, or registry. Ask one short question only when the target truly cannot be determined.
+- Read `.brain/wiki/index.md` before re-solving a difficult or recurring project problem. Load only relevant entries.
+- Make no `.brain/` writes during pure Q&A or read-only work.
+- Never print, copy into documentation, or commit secret values. Record only credential names, locations, owners, and recovery methods.
+- Do not create empty memory templates. Project memory grows from verified facts.
+- Respect the configured policy: `quiet` records findings, `guarded` interrupts only for data-loss risks, and `strict` enforces continuity records too.
+- Let Boss silently register active, non-empty GitHub repositories owned by the configured `~/.boss/owner`. Registration never creates an empty project Brain.
+- Store credential values through the available Vault MCP. Write only the Vault key name, purpose, and recovery instructions into Boss or Brain files.
+
+## Natural project work
+
+When code or project state changes, follow the repository's own instructions first. If a commit is produced, keep the minimal continuity records already used by that repository consistent, then push when the repository policy requires it. Never claim another concurrent session's changes.
+
+Use `boss projects`, `boss status`, `boss caps`, and `boss risk` only when the user asks for a portfolio view or when it directly resolves the current task. Use `boss explain` when the user asks what context was loaded. Use `boss scan --adopt` for an explicit immediate patrol.
+
+Machine recovery lives in a separate `boss-<machine-id>` Git repository. Use `boss machine init`, `boss machine sync --push`, and `boss machine restore` only when the user asks to configure, synchronize, or recover a machine. The generated repository contains inventory and Vault references, never credentials.
+
+## Explicit lifecycle operations
+
+These operations are deliberately user-triggered because they can create or substantially edit project memory:
+
+- Initialize or adopt an existing project: read [references/initialize.md](references/initialize.md).
+- Prepare or assess a handoff: read [references/handoff.md](references/handoff.md).
+- Take over a project: read [references/takeover.md](references/takeover.md).
+- Backfill historical commits: read [references/backfill.md](references/backfill.md).
+
+For memory file meanings and minimum schemas, read [references/brain-schema.md](references/brain-schema.md). Do not load lifecycle references unless the matching operation is requested.
