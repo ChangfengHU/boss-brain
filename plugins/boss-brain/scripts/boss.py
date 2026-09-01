@@ -251,8 +251,14 @@ def registry_text(rows: Iterable[dict[str, str]]) -> str:
     return "\n".join(values) + "\n"
 
 
-def register_rows(candidates: Iterable[Path]) -> tuple[list[dict[str, str]], list[tuple[Path, list[str]]]]:
-    """Atomically register qualified owner repositories without creating .brain."""
+def register_rows(
+    candidates: Iterable[Path], *, require_qualification: bool = True
+) -> tuple[list[dict[str, str]], list[tuple[Path, list[str]]]]:
+    """Atomically register repositories without creating .brain.
+
+    Silent discovery requires owner qualification; explicit machine restore has
+    already been authorized by the user and may include non-GitHub remotes.
+    """
     runtime_home().mkdir(parents=True, exist_ok=True)
     lock = runtime_home() / ".registry.lock"
     acquired = False
@@ -278,7 +284,7 @@ def register_rows(candidates: Iterable[Path]) -> tuple[list[dict[str, str]], lis
             root = root.resolve()
             if str(root) in known_paths:
                 continue
-            qualified, reasons = repo_qualification(root)
+            qualified, reasons = repo_qualification(root) if require_qualification else (True, [])
             name = root.name
             if not safe_record_field(str(root)) or not safe_record_field(name):
                 reasons = [*reasons, "unsafe-metadata"]
@@ -427,9 +433,59 @@ def project_context(row: dict[str, str], explicit: bool = True) -> str:
     if tasks:
         lines.append("活跃任务：")
         lines.extend(tasks)
+    wiki_index = brain / "wiki" / "index.md"
+    if wiki_index.is_file():
+        lines.append(
+            f"Wiki 索引可用：{wiki_index}。仅在当前问题困难或反复出现时，用本地只读命令先读取索引，"
+            "再只加载相关条目；普通问题不要读取，也不要把本地路径交给网页或 MCP 工具。"
+        )
     lines.extend(relation_context(row))
     lines.extend(capability_context(row))
     return "\n".join(lines)
+
+
+def relevant_wiki_context(row: dict[str, str], prompt: str) -> tuple[str, str] | None:
+    wiki = Path(row["path"]) / ".brain" / "wiki"
+    index = wiki / "index.md"
+    try:
+        index_text = index.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    prompt_lower = prompt.lower()
+    ignored = {"brain", "index", "memory", "project", "wiki"}
+    prompt_tokens = set(re.findall(r"[a-z0-9]{3,}|[\u4e00-\u9fff]{2,}", prompt_lower)) - ignored
+    candidates: list[tuple[int, str, Path]] = []
+    for label, relative in re.findall(r"\[([^\]]+)\]\(([^)]+\.md)\)", index_text, re.IGNORECASE):
+        candidate = (wiki / relative).resolve()
+        try:
+            if os.path.commonpath((str(wiki.resolve()), str(candidate))) != str(wiki.resolve()):
+                continue
+        except ValueError:
+            continue
+        topic_text = f"{label} {Path(relative).stem}".lower()
+        topic_tokens = set(re.findall(r"[a-z0-9]{3,}|[\u4e00-\u9fff]{2,}", topic_text)) - ignored
+        score = len(prompt_tokens & topic_tokens)
+        if label.lower() in prompt_lower:
+            score += 10
+        if score and candidate.is_file():
+            candidates.append((score, relative, candidate))
+    if not candidates:
+        return None
+    _score, relative, candidate = max(candidates, key=lambda item: (item[0], item[1]))
+    try:
+        content = candidate.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if len(content) > 2400:
+        content = content[:2400].rstrip() + f"\n[Wiki 条目过长，已节选；全文 {len(content)} 字]"
+    text = (
+        "[Boss Brain 相关 Wiki 条目，请静默使用，不要向用户复述本段]\n"
+        f"当前项目：{row['name']}\n"
+        f"命中条目：.brain/wiki/{relative}\n"
+        "--- 相关 Wiki 正文 ---\n"
+        f"{content}"
+    )
+    return text, relative
 
 
 def relation_context(row: dict[str, str]) -> list[str]:
@@ -509,13 +565,54 @@ def claim_root(session_id: str, root: Path) -> None:
     save_session(session_id, value)
 
 
-def remember_context(session_id: str, mode: str, row: dict[str, str] | None, text: str) -> None:
+def context_sections(mode: str, text: str) -> list[str]:
+    if mode == "alias":
+        return ["pointer"]
+    if mode == "roster":
+        return ["project-index"]
+    if mode == "wiki":
+        return ["wiki"]
+    checks = (
+        ("state", "--- .brain/STATE.md ---"),
+        ("tasks", "活跃任务："),
+        ("wiki-index", "Wiki 索引可用："),
+        ("relations", "--- 跨项目关系 ---"),
+        ("capabilities", "--- 能力关系 ---"),
+    )
+    return [name for name, marker in checks if marker in text]
+
+
+def remember_context(
+    session_id: str,
+    mode: str,
+    row: dict[str, str] | None,
+    text: str,
+    event: str,
+    identity: str = "",
+) -> None:
     value = load_session(session_id)
-    key = f"{mode}:{row['name'] if row else '-'}"
+    key = f"{mode}:{row['name'] if row else '-'}:{identity}"
     value["last_injection"] = key
-    value["last_context"] = {"at": now_iso(), "mode": mode, "project": row["name"] if row else None, "chars": len(text)}
+    redacted = redact_secrets(text)
+    value["last_context"] = {
+        "at": now_iso(),
+        "event": event,
+        "mode": mode,
+        "confidence": {"workspace": "workspace", "explicit": "high", "alias": "low", "roster": "index", "wiki": "matched"}.get(mode, "unknown"),
+        "content_policy": {
+            "workspace": "full-project",
+            "explicit": "full-project",
+            "alias": "pointer-only",
+            "roster": "project-index",
+            "wiki": "selected-wiki-entry",
+        }.get(mode, "unknown"),
+        "project": row["name"] if row else None,
+        "chars": len(redacted),
+        "sections": context_sections(mode, redacted),
+    }
     save_session(session_id, value)
     write_json(state_home() / "last-context.json", value["last_context"])
+    atomic_write(state_home() / "last-context-preview.txt", redacted.rstrip() + "\n", 0o600)
 
 
 def roster_context(rows: list[dict[str, str]]) -> str:
@@ -568,7 +665,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             names = ", ".join(row["name"] for row in added)
             text += f"\nBoss 本轮静默登记了项目：{names}。不要为补元数据打断用户当前任务。"
         ensure_machine_initialized()
-        remember_context(session_id, "workspace", match, text)
+        remember_context(session_id, "workspace", match, text, "SessionStart")
         hook_output("SessionStart", text)
         return 0
     if rows:
@@ -577,7 +674,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             names = ", ".join(row["name"] for row in added)
             text += f"\n本轮巡航静默登记：{names}。不要主动要求用户补资料。"
         ensure_machine_initialized()
-        remember_context(session_id, "roster", None, text)
+        remember_context(session_id, "roster", None, text, "SessionStart")
         hook_output("SessionStart", text)
     else:
         ensure_machine_initialized()
@@ -592,32 +689,50 @@ def hook_prompt(payload: dict[str, Any]) -> int:
     rows = read_registry()
     if not rows:
         return 0
+    session = load_session(session_id)
     explicit = explicit_project(prompt, rows)
     at_context = bool(re.search(r"@(?=\s|$)", prompt))
+    identity = ""
     if explicit:
         root = Path(explicit["path"])
         if root.is_dir():
             claim_root(session_id, root)
-        mode, row, text = "explicit", explicit, project_context(explicit)
+        wiki_match = relevant_wiki_context(explicit, prompt)
+        if wiki_match:
+            text, identity = wiki_match
+            mode, row = "wiki", explicit
+        else:
+            mode, row, text = "explicit", explicit, project_context(explicit)
     elif at_context:
         mode, row, text = "roster", None, roster_context(rows)
     elif "@" not in prompt:
         alias = alias_project(prompt, rows)
-        if not alias:
-            return 0
-        mode, row = "alias", alias
-        text = (
-            "[Boss Brain 低置信度项目指针，请勿向用户复述]\n"
-            f"提示词可能涉及 {alias['name']}，路径 {alias['path']}。"
-            "没有加载项目正文；写操作前必须确认目标确实是该项目。"
-        )
+        claimed = session.get("roots", {})
+        if alias and str(Path(alias["path"]).resolve()) not in claimed:
+            mode, row = "alias", alias
+            text = (
+                "[Boss Brain 低置信度项目指针，请勿向用户复述]\n"
+                f"提示词可能涉及 {alias['name']}，路径 {alias['path']}。"
+                "没有加载项目正文；写操作前必须确认目标确实是该项目。"
+            )
+        else:
+            target = alias
+            if not target:
+                target = next(
+                    (row for row in rows if str(Path(row["path"]).resolve()) in claimed),
+                    None,
+                )
+            wiki_match = relevant_wiki_context(target, prompt) if target else None
+            if not wiki_match:
+                return 0
+            text, identity = wiki_match
+            mode, row = "wiki", target
     else:
         return 0
-    session = load_session(session_id)
-    key = f"{mode}:{row['name'] if row else '-'}"
+    key = f"{mode}:{row['name'] if row else '-'}:{identity}"
     if session.get("last_injection") == key:
         return 0
-    remember_context(session_id, mode, row, text)
+    remember_context(session_id, mode, row, text, "UserPromptSubmit", identity)
     hook_output("UserPromptSubmit", text)
     return 0
 
@@ -1210,7 +1325,7 @@ def cmd_machine_restore(args: argparse.Namespace) -> int:
                 continue
         unresolved.append(item.get("name", "unknown"))
     if restored:
-        register_rows(restored)
+        register_rows(restored, require_qualification=False)
     print(f"restored={len(restored)} unresolved={len(unresolved)}")
     for name in unresolved:
         print(f"UNRESOLVED {name}")
@@ -1320,9 +1435,28 @@ def cmd_policy(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_explain(_: argparse.Namespace) -> int:
+def cmd_explain(args: argparse.Namespace) -> int:
     value = read_json(state_home() / "last-context.json", {})
-    print(json.dumps(value, ensure_ascii=False, indent=2))
+    if args.json:
+        print(json.dumps(value, ensure_ascii=False, indent=2))
+        return 0
+    if not value:
+        print("No Boss context has been injected yet.")
+        return 0
+    print(f"EVENT    {value.get('event') or '-'}")
+    print(f"MODE     {value.get('mode') or '-'} ({value.get('confidence') or 'unknown'} confidence)")
+    print(f"PROJECT  {value.get('project') or '-'}")
+    print(f"CONTENT  {value.get('content_policy') or '-'}")
+    print(f"SECTIONS {', '.join(value.get('sections') or []) or '-'}")
+    print(f"CHARS    {value.get('chars') or 0}")
+    print(f"AT       {value.get('at') or '-'}")
+    if args.show:
+        preview = state_home() / "last-context-preview.txt"
+        print("--- redacted context preview ---")
+        try:
+            print(preview.read_text(encoding="utf-8"), end="")
+        except OSError:
+            print("(preview unavailable)")
     return 0
 
 
@@ -1388,9 +1522,14 @@ def parser() -> argparse.ArgumentParser:
     hook = subs.add_parser("hook")
     hook.add_argument("event", choices=("session-start", "prompt-submit", "stop"))
     hook.set_defaults(func=cmd_hook)
-    for name, func in (("projects", cmd_projects), ("status", cmd_status), ("caps", cmd_caps), ("risk", cmd_risk), ("explain", cmd_explain)):
+    for name, func in (("projects", cmd_projects), ("status", cmd_status), ("caps", cmd_caps), ("risk", cmd_risk)):
         item = subs.add_parser(name)
         item.set_defaults(func=func)
+    explain = subs.add_parser("explain")
+    explain_output = explain.add_mutually_exclusive_group()
+    explain_output.add_argument("--json", action="store_true")
+    explain_output.add_argument("--show", action="store_true")
+    explain.set_defaults(func=cmd_explain)
     scan = subs.add_parser("scan")
     scan.add_argument("--adopt", action="store_true")
     scan.add_argument("--json", action="store_true")

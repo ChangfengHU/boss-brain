@@ -41,6 +41,8 @@ boss scan --adopt
 boss status
 boss caps
 boss risk
+boss explain
+boss explain --show
 boss policy quiet|guarded|strict
 boss machine init --name boss-MACHINE
 boss machine init --name boss-IP --create-remote --timer
@@ -65,19 +67,19 @@ See [architecture](docs/architecture.md), [security](docs/security.md), [migrati
 
 ## Testing
 
-Run the deterministic suite with:
+Run the deterministic and user-journey suite with:
 
 ```bash
-python3 -m unittest -v tests.test_boss tests.test_resilience
+python3 -m unittest -v tests.test_boss tests.test_resilience tests.test_user_journeys
 ```
 
-The authenticated Codex lifecycle test must run on a disposable host and copies login state only into a temporary directory that is deleted on exit:
+The authenticated Codex user-journey test must run on a disposable host and copies login state only into a temporary directory that is deleted on exit:
 
 ```bash
 CODEX_AUTH_SOURCE=/secure/path/auth.json ./tests/remote_codex_e2e.sh
 ```
 
-See [testing strategy and coverage](docs/testing.md) for the scenario matrix and remaining boundaries.
+See [testing strategy](docs/testing.md) and the [capability-to-test coverage map](docs/coverage.md) for explicit evidence and remaining boundaries.
 
 ## Uninstall and rollback
 
