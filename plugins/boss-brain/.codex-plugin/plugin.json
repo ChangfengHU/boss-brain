@@ -1,6 +1,6 @@
 {
   "name": "boss-brain",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260901191123",
   "description": "Machine-level project control and portable project memory for coding agents.",
   "author": {
     "name": "ChangfengHU"
@@ -15,7 +15,11 @@
     "longDescription": "Boss discovers and manages a machine's Git projects while each portable Brain carries project state, lessons, capabilities, and handoff knowledge across machines.",
     "developerName": "ChangfengHU",
     "category": "Productivity",
-    "capabilities": ["Read", "Write", "Interactive"],
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
     "defaultPrompt": [
       "Show the projects Boss Brain currently knows.",
       "Explain the context Boss Brain most recently loaded.",

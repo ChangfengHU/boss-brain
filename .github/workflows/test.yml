@@ -18,6 +18,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: python -m unittest -v tests.test_boss
+      - run: python -m unittest -v tests.test_boss tests.test_resilience
       - run: python -m py_compile plugins/boss-brain/scripts/boss.py scripts/install.py
-      - run: bash -n install.sh uninstall.sh
+      - run: bash -n install.sh uninstall.sh tests/remote_codex_e2e.sh

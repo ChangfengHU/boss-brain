@@ -36,6 +36,22 @@ TOKEN_RE = re.compile(
 AT_TOKEN_RE = re.compile(r"@([A-Za-z0-9_\-\u4e00-\u9fff]+)")
 
 
+def bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(maximum, max(minimum, parsed))
+
+
+def redact_secrets(value: str) -> str:
+    return TOKEN_RE.sub("[REDACTED_SECRET]", value)
+
+
+def safe_record_field(value: str) -> bool:
+    return not TOKEN_RE.search(value) and not any(character in value for character in "\t\r\n")
+
+
 def runtime_home() -> Path:
     override = os.environ.get("BOSS_HOME")
     return Path(override).expanduser() if override else Path.home() / ".boss"
@@ -82,11 +98,14 @@ def config() -> dict[str, Any]:
     if policy not in POLICIES:
         policy = "quiet"
     scan = value.get("scan") if isinstance(value.get("scan"), dict) else {}
+    scan = {"max_depth": 3, "max_age_days": 180, **scan}
+    scan["max_depth"] = bounded_int(scan.get("max_depth"), 3, 0, 32)
+    scan["max_age_days"] = bounded_int(scan.get("max_age_days"), 180, 0, 36500)
     return {
         **value,
         "schema": SCHEMA_VERSION,
         "policy": policy,
-        "scan": {"max_depth": 3, "max_age_days": 180, **scan},
+        "scan": scan,
     }
 
 
@@ -261,6 +280,9 @@ def register_rows(candidates: Iterable[Path]) -> tuple[list[dict[str, str]], lis
                 continue
             qualified, reasons = repo_qualification(root)
             name = root.name
+            if not safe_record_field(str(root)) or not safe_record_field(name):
+                reasons = [*reasons, "unsafe-metadata"]
+                qualified = False
             if name.lower() in known_names:
                 reasons = [*reasons, "name-conflict"]
                 qualified = False
@@ -510,7 +532,7 @@ def hook_output(event: str, context: str) -> None:
         if event == "Stop":
             print("{}")
         return
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}, ensure_ascii=False))
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": redact_secrets(context)}}, ensure_ascii=False))
 
 
 def hook_session_start(payload: dict[str, Any]) -> int:
@@ -690,7 +712,11 @@ def audit_repo(root: Path, baseline: str, policy: str) -> list[dict[str, str]]:
 def append_audit(session_id: str, findings: list[dict[str, str]]) -> None:
     path = state_home() / "audit.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"at": now_iso(), "session": session_id, "findings": findings}
+    safe_findings = [
+        {key: redact_secrets(value) if isinstance(value, str) else value for key, value in finding.items()}
+        for finding in findings
+    ]
+    entry = {"at": now_iso(), "session": session_id, "findings": safe_findings}
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
     os.chmod(path, 0o600)
@@ -1043,7 +1069,11 @@ def cmd_machine_init(args: argparse.Namespace) -> int:
                 return 2
     patrol(force=True)
     save_machine_config(machine)
-    paths = write_machine_snapshot(repo, machine)
+    try:
+        paths = write_machine_snapshot(repo, machine)
+    except RuntimeError:
+        print("machine snapshot refused because secret-like content was detected", file=sys.stderr)
+        return 2
     committed, status = commit_machine_snapshot(repo, paths)
     print(f"machine={machine['name']} path={repo} snapshot={status}")
     if args.create_remote:
@@ -1089,7 +1119,11 @@ def cmd_machine_sync(args: argparse.Namespace) -> int:
         print("machine brain is not initialized; run boss machine init", file=sys.stderr)
         return 2
     patrol(force=True)
-    paths = write_machine_snapshot(repo, machine)
+    try:
+        paths = write_machine_snapshot(repo, machine)
+    except RuntimeError:
+        print("machine snapshot refused because secret-like content was detected", file=sys.stderr)
+        return 2
     _committed, status = commit_machine_snapshot(repo, paths)
     print(f"snapshot={status}")
     return push_machine(repo) if args.push else (0 if status in ("committed", "unchanged") else 1)
@@ -1191,7 +1225,13 @@ def cmd_vault_ref(args: argparse.Namespace) -> int:
         except OSError:
             print("# project\tkey\tpurpose")
         return 0
-    if TOKEN_RE.search(args.key) or any(char.isspace() for char in args.key) or "=" in args.key:
+    fields = [args.key, args.project or "machine", args.purpose or ""]
+    if (
+        TOKEN_RE.search(args.key)
+        or any(char.isspace() for char in args.key)
+        or "=" in args.key
+        or any(not safe_record_field(field) for field in fields)
+    ):
         print("refusing secret-like or malformed key name", file=sys.stderr)
         return 2
     rows: list[list[str]] = []
@@ -1329,6 +1369,10 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         print(f"already managed: {root}")
         return 0
     name = args.name or root.name
+    fields = [str(root), name, args.aliases or "", args.summary or "", args.kind]
+    if any(not safe_record_field(field) for field in fields):
+        print("refusing secret-like or malformed project metadata", file=sys.stderr)
+        return 2
     line = "\t".join([str(root), name, args.aliases or "", args.summary or "", args.kind])
     path = runtime_home() / "registry.tsv"
     existing = merge_registry([registry_path()]).rstrip("\n")

@@ -227,7 +227,7 @@ class PackagingTest(unittest.TestCase):
         market = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
         hooks = json.loads((ROOT / "plugins" / "boss-brain" / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         self.assertEqual(codex["name"], "boss-brain")
-        self.assertEqual(codex["version"], claude["version"])
+        self.assertEqual(codex["version"].split("+", 1)[0], claude["version"])
         self.assertEqual(market["plugins"][0]["policy"]["authentication"], "ON_INSTALL")
         self.assertEqual(set(hooks["hooks"]), {"SessionStart", "UserPromptSubmit", "Stop"})
         self.assertNotIn("hooks", codex)

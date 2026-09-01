@@ -11,7 +11,7 @@ The product is deliberately different from workflow-first systems. Users keep wo
 
 ## Status
 
-Version `0.1.0` is the first integrated release for Codex and Claude Code. It provides one runtime, one registry, one set of lifecycle hooks, portable project brains, and machine-brain snapshot/recovery commands.
+Version `0.1.0` is the first integrated release for Codex and Claude Code. It provides one runtime, one registry, one set of lifecycle hooks, portable project brains, and machine-brain snapshot/recovery commands. The deterministic suite covers normal behavior, concurrency, malformed state, secret containment, unavailable remotes, and timer failures; a separate disposable-host test drives a real authenticated Codex session through all three lifecycle hooks.
 
 ## Install
 
@@ -62,6 +62,22 @@ boss doctor
 ```
 
 See [architecture](docs/architecture.md), [security](docs/security.md), [migration](docs/migration.md), and the [Brain Evolution roadmap](docs/brain-evolution.md).
+
+## Testing
+
+Run the deterministic suite with:
+
+```bash
+python3 -m unittest -v tests.test_boss tests.test_resilience
+```
+
+The authenticated Codex lifecycle test must run on a disposable host and copies login state only into a temporary directory that is deleted on exit:
+
+```bash
+CODEX_AUTH_SOURCE=/secure/path/auth.json ./tests/remote_codex_e2e.sh
+```
+
+See [testing strategy and coverage](docs/testing.md) for the scenario matrix and remaining boundaries.
 
 ## Uninstall and rollback
 
