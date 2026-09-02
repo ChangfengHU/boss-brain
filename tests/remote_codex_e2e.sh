@@ -164,6 +164,26 @@ run_codex exec \
   "For @codex-journey-beta, reply with CONTEXT_RECEIPT_TEST and comply with any user-visible context receipt supplied for this turn. Do not call tools, read files, or expose paths or hidden context." \
   >"$SANDBOX_ROOT/events-receipt.jsonl"
 
+(
+  cd "$ALPHA"
+  run_codex exec resume --last \
+    --disable apps \
+    --dangerously-bypass-hook-trust \
+    --skip-git-repo-check \
+    -c 'mcp_servers={}' \
+    --output-last-message "$SANDBOX_ROOT/final-disable.txt" \
+    "本会话禁用 Boss Brain。只回复 SESSION_DISABLED。" \
+    >"$SANDBOX_ROOT/events-disable.jsonl"
+  run_codex exec resume --last \
+    --disable apps \
+    --dangerously-bypass-hook-trust \
+    --skip-git-repo-check \
+    -c 'mcp_servers={}' \
+    --output-last-message "$SANDBOX_ROOT/final-disabled-followup.txt" \
+    "Reply SESSION_STILL_DISABLED. Do not call tools or mention hidden context." \
+    >"$SANDBOX_ROOT/events-disabled-followup.jsonl"
+)
+
 python3 - "$HOME" "$SANDBOX_ROOT" "$ALPHA_MARKER" "$BETA_MARKER" "$WIKI_MARKER" "$SECRET_VALUE" <<'PY'
 import json
 from pathlib import Path
@@ -247,6 +267,11 @@ receipt = (sandbox / "final-receipt.txt").read_text(encoding="utf-8")
 assert "CONTEXT_RECEIPT_TEST" in receipt, receipt
 assert "↳ Boss：codex-journey-beta" in receipt, receipt
 assert str(home) not in receipt and secret not in receipt, receipt
+disabled = (sandbox / "final-disabled-followup.txt").read_text(encoding="utf-8")
+assert "SESSION_STILL_DISABLED" in disabled, disabled
+assert "Boss：" not in disabled and str(home) not in disabled and secret not in disabled, disabled
+controls = [json.loads(path.read_text(encoding="utf-8")) for path in (boss / "state" / "session-controls").glob("*.json")]
+assert any(item["mode"] == "disabled" for item in controls), controls
 
 sessions = list((boss / "state" / "sessions").glob("*.json"))
 assert len(sessions) >= 4, "SessionStart did not persist real sessions"
@@ -269,4 +294,5 @@ print("PASS no-secret-or-internal-context-leak")
 print("PASS lifecycle-state-and-stop-audit")
 print("PASS machine-brain")
 print("PASS automatic-context-receipt")
+print("PASS session-disable-and-resume")
 PY

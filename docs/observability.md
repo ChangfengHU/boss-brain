@@ -35,6 +35,24 @@ Receipts contain project/task names and selected section labels only. They must 
 
 The Codex hook protocol supplies instructions rather than a native status component, so receipt rendering depends on the agent following the injected receipt instruction. Real-Codex acceptance tests verify this behavior; the per-session trace remains the authoritative record.
 
+## Session controls
+
+Each session can independently use one of three modes:
+
+- `enabled`: normal routing, injection, receipts, trace, and Stop policy.
+- `observe-only`: record routing and Stop diagnostics without injecting context, displaying receipts, or blocking Stop.
+- `disabled`: skip routing, injection, trace, and Stop auditing for that session.
+
+Natural-language requests containing “本会话禁用 Boss Brain”, “本会话只观察”, or “本会话恢复 Boss Brain” update only the current session. The equivalent diagnostic interface is:
+
+```bash
+boss session mode SESSION_ID disabled
+boss session mode SESSION_ID observe-only
+boss session mode SESSION_ID enabled
+```
+
+Controls are stored separately from session routing state so a disabled session can be resumed without first running its normal hooks.
+
 ## Diagnosis
 
 ```bash

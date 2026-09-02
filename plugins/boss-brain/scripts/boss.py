@@ -31,6 +31,7 @@ VERSION = "0.1.0"
 SCHEMA_VERSION = 1
 POLICIES = ("quiet", "guarded", "strict")
 RECEIPT_POLICIES = ("off", "changes", "always")
+SESSION_MODES = ("enabled", "observe-only", "disabled")
 TOKEN_RE = re.compile(
     r"(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|"
     r"xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{30,}|"
@@ -1028,6 +1029,32 @@ def preview_file(session_id: str) -> Path:
     return state_home() / "previews" / f"{safe}.txt"
 
 
+def session_control_file(session_id: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "nosid")
+    return state_home() / "session-controls" / f"{safe}.json"
+
+
+def session_mode(session_id: str) -> str:
+    mode = read_json(session_control_file(session_id), {}).get("mode", "enabled")
+    return mode if mode in SESSION_MODES else "enabled"
+
+
+def set_session_mode(session_id: str, mode: str) -> None:
+    write_json(session_control_file(session_id), {"schema": 1, "session": session_id, "mode": mode, "at": now_iso()})
+
+
+def requested_session_mode(prompt: str) -> str:
+    if not re.search(r"(?i)(本会话|this session)", prompt):
+        return ""
+    if re.search(r"(?i)(恢复|启用|重新使用|enable|resume).{0,20}(boss|插件)?", prompt):
+        return "enabled"
+    if re.search(r"(?i)(只观察|仅观察|observe[- ]?only)", prompt):
+        return "observe-only"
+    if re.search(r"(?i)(禁用|停用|不要使用|不使用|disable).{0,20}(boss|插件)?", prompt):
+        return "disabled"
+    return ""
+
+
 def append_trace(session_id: str, entry: dict[str, Any]) -> None:
     path = trace_file(session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1252,10 +1279,17 @@ def hook_output(event: str, context: str) -> None:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": redact_secrets(context)}}, ensure_ascii=False))
 
 
+def session_hook_output(session_id: str, event: str, context: str) -> None:
+    if session_mode(session_id) == "enabled":
+        hook_output(event, context)
+
+
 def hook_session_start(payload: dict[str, Any]) -> int:
+    session_id = str(payload.get("session_id") or "nosid")
+    if session_mode(session_id) == "disabled":
+        return 0
     cleanup_state()
     added, _skipped = patrol()
-    session_id = str(payload.get("session_id") or "nosid")
     source = str(payload.get("source") or "startup")
     value = load_session(session_id)
     if source in ("compact", "resume"):
@@ -1291,7 +1325,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             text += f"\nBoss 本轮静默登记了项目：{names}。不要为补元数据打断用户当前任务。"
         ensure_machine_initialized()
         text = remember_context(session_id, "workspace", match, text, "SessionStart", task_id=task_id)
-        hook_output("SessionStart", text)
+        session_hook_output(session_id, "SessionStart", text)
         return 0
     if rows:
         text = roster_context(rows)
@@ -1300,7 +1334,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             text += f"\n本轮巡航静默登记：{names}。不要主动要求用户补资料。"
         ensure_machine_initialized()
         text = remember_context(session_id, "roster", None, text, "SessionStart")
-        hook_output("SessionStart", text)
+        session_hook_output(session_id, "SessionStart", text)
     else:
         ensure_machine_initialized()
     return 0
@@ -1311,6 +1345,12 @@ def hook_prompt(payload: dict[str, Any]) -> int:
     if not prompt:
         return 0
     session_id = str(payload.get("session_id") or "nosid")
+    requested_mode = requested_session_mode(prompt)
+    if requested_mode:
+        set_session_mode(session_id, requested_mode)
+        return 0
+    if session_mode(session_id) == "disabled":
+        return 0
     rows = read_registry()
     if not rows:
         remember_suppression(session_id, "no-project-registry")
@@ -1429,7 +1469,7 @@ def hook_prompt(payload: dict[str, Any]) -> int:
         session_id, mode, row, text, "UserPromptSubmit", identity, task_id, drift_task,
         current["name"] if current else "", evidence, current_task, drift_goal, match_score,
     )
-    hook_output("UserPromptSubmit", text)
+    session_hook_output(session_id, "UserPromptSubmit", text)
     return 0
 
 
@@ -1544,6 +1584,10 @@ def hook_stop(payload: dict[str, Any]) -> int:
         print("{}")
         return 0
     session_id = str(payload.get("session_id") or "nosid")
+    mode = session_mode(session_id)
+    if mode == "disabled":
+        print("{}")
+        return 0
     session = load_session(session_id)
     cwd = Path(str(payload.get("cwd") or os.getcwd()))
     root = git_root(cwd)
@@ -1558,6 +1602,9 @@ def hook_stop(payload: dict[str, Any]) -> int:
         if repo.is_dir() and (repo / ".git").exists():
             findings.extend(audit_repo(repo, str(info.get("baseline") or ""), policy, str(info.get("task_id") or "")))
     append_audit(session_id, findings)
+    if mode == "observe-only":
+        print("{}")
+        return 0
     if policy == "quiet":
         print("{}")
         return 0
@@ -2170,6 +2217,13 @@ def cmd_receipt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_session_mode(args: argparse.Namespace) -> int:
+    if args.value:
+        set_session_mode(args.session_id, args.value)
+    print(session_mode(args.session_id))
+    return 0
+
+
 def cmd_explain(args: argparse.Namespace) -> int:
     session_id = args.session or ""
     value = load_session(session_id).get("last_context", {}) if session_id else read_json(state_home() / "last-context.json", {})
@@ -2348,6 +2402,12 @@ def parser() -> argparse.ArgumentParser:
     receipt = subs.add_parser("receipt")
     receipt.add_argument("value", nargs="?", choices=RECEIPT_POLICIES)
     receipt.set_defaults(func=cmd_receipt)
+    session = subs.add_parser("session")
+    session_subs = session.add_subparsers(dest="session_command", required=True)
+    session_mode_parser = session_subs.add_parser("mode")
+    session_mode_parser.add_argument("session_id")
+    session_mode_parser.add_argument("value", nargs="?", choices=SESSION_MODES)
+    session_mode_parser.set_defaults(func=cmd_session_mode)
     doctor = subs.add_parser("doctor")
     doctor.add_argument("--json", action="store_true")
     doctor.set_defaults(func=cmd_doctor)

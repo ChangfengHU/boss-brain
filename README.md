@@ -45,6 +45,7 @@ boss explain
 boss explain --show
 boss explain --session SESSION_ID --history
 boss receipt changes
+boss session mode SESSION_ID disabled
 boss wiki check
 boss conventions check
 boss handoff check --run

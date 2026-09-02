@@ -13,6 +13,7 @@ Passing test counts are not a product-completeness claim. A capability is called
 | Low-confidence alias pointer | Verified locally and with real Codex | `test_low_confidence_alias_is_pointer_only_until_user_is_explicit`; remote pointer-only turn | Natural-language false-positive corpus remains small |
 | Duplicate suppression and resume/compact reinjection | Verified | duplicate/resume test; remote resumed answer | Long multi-day session history |
 | Context observability | Verified locally and with real Codex | session-isolated append-only traces, project/task transitions, suppression reasons, `boss explain --session`, redacted preview, and automatic receipt journey | Hook receipts rely on agent rendering because Codex has no native plugin status component |
+| Per-session plugin control | Verified locally | enabled, observe-only, disabled, natural-language restore, Stop bypass, and cross-session isolation journey | A disabled session intentionally produces no trace until restored |
 | Secret redaction in hook output, final answer, events, and preview | Verified for known token shapes | resilience, preview, and remote user tests | General semantic secret detection is not claimed |
 | `STATE.md` injection and large-card capping | Verified | workspace and large-state tests | Invalid encodings are replacement-decoded, not rejected |
 | `TASKS.md` active checkbox and legacy `active` parsing | Verified | current/complete/limit/refresh and legacy tests | There is no task state machine or task ID integrity yet |

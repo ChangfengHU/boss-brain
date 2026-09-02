@@ -625,6 +625,58 @@ class UserJourneyTest(unittest.TestCase):
         )
         self.assertNotIn("用户可见上下文回执要求", explicit.stdout)
 
+    def test_session_mode_can_disable_or_observe_without_affecting_other_sessions(self) -> None:
+        repo = make_repo(self.home / "work" / "session-control", "SESSION_CONTROL_READY")
+        self.assertEqual(self.boss("adopt", str(repo)).returncode, 0)
+        self.assertEqual(self.boss("session", "mode", "muted", "disabled").stdout.strip(), "disabled")
+
+        muted_start = self.boss(
+            "hook", "session-start",
+            payload={"session_id": "muted", "cwd": str(repo), "source": "startup"},
+        )
+        muted_prompt = self.boss(
+            "hook", "prompt-submit",
+            payload={"session_id": "muted", "prompt": "查看 @session-control"},
+        )
+        muted_stop = self.boss(
+            "hook", "stop",
+            payload={"session_id": "muted", "cwd": str(repo)},
+        )
+        self.assertEqual(muted_start.stdout, "")
+        self.assertEqual(muted_prompt.stdout, "")
+        self.assertEqual(json.loads(muted_stop.stdout), {})
+        self.assertFalse((self.boss_home / "state" / "traces" / "muted.jsonl").exists())
+
+        active = self.boss(
+            "hook", "session-start",
+            payload={"session_id": "active", "cwd": str(repo), "source": "startup"},
+        )
+        self.assertIn("SESSION_CONTROL_READY", active.stdout)
+        self.assertEqual(
+            self.boss(
+                "hook", "prompt-submit",
+                payload={"session_id": "active", "prompt": "本会话禁用 Boss Brain"},
+            ).stdout,
+            "",
+        )
+        self.assertEqual(self.boss("session", "mode", "active").stdout.strip(), "disabled")
+
+        self.assertEqual(self.boss("session", "mode", "observed", "observe-only").stdout.strip(), "observe-only")
+        observed = self.boss(
+            "hook", "session-start",
+            payload={"session_id": "observed", "cwd": str(repo), "source": "startup"},
+        )
+        self.assertEqual(observed.stdout, "")
+        history = json.loads(self.boss("explain", "--session", "observed", "--history", "--json").stdout)
+        self.assertEqual(history[-1]["mode"], "workspace")
+
+        restored = self.boss(
+            "hook", "prompt-submit",
+            payload={"session_id": "muted", "prompt": "本会话恢复 Boss Brain"},
+        )
+        self.assertEqual(restored.stdout, "")
+        self.assertEqual(self.boss("session", "mode", "muted").stdout.strip(), "enabled")
+
     def test_git_worktree_uses_the_checked_out_worktree_context(self) -> None:
         source = make_repo(self.home / "work" / "source", "SOURCE_READY")
         worktree = self.home / "worktrees" / "feature-view"
