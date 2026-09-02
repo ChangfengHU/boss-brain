@@ -69,4 +69,4 @@ A build is eligible for preview release only when the deterministic suite, plugi
 
 ## Deliberately not claimed yet
 
-The current suite does not prove interactive hook trust review, Claude Code behavior, macOS/Windows compatibility, creation against a real GitHub account, multi-day systemd stability, automatic semantic Wiki consolidation, or recovery from a real reclaimed machine. It does verify conservative semantic-overlap merge suggestions, explicit convention conflict diagnostics, and no-ID goal-drift warnings locally. Those remaining boundaries are explicit release limits rather than assumed coverage.
+The current suite does not prove interactive hook trust review, creation against a real GitHub account, multi-day systemd stability, automatic semantic Wiki consolidation, or recovery from a real reclaimed machine. Claude Code, macOS, and Windows are explicitly outside this work's release scope. The suite does verify conservative semantic-overlap merge suggestions, explicit convention conflict diagnostics, and no-ID goal-drift warnings locally. Remaining boundaries are explicit release limits rather than assumed coverage.

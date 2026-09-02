@@ -38,8 +38,8 @@ Passing test counts are not a product-completeness claim. A capability is called
 | systemd timer generation and enable failure | Partial | interval and fake-controller tests | Multi-day live timer/push canary |
 | Vault reference containment | Verified for accepted/rejected shapes | Vault and snapshot security tests | Real Vault outage behavior |
 | Install/update/uninstall/rollback preservation | Verified in isolated HOME | installer and rollback tests | Interactive existing-plugin trust UX |
-| Claude Code lifecycle | Not automated | Manifest consistency only | Real Claude session required |
-| macOS and Windows | Not automated | None | Platform runners required |
+| Claude Code lifecycle | Out of scope | Not tested by project decision | Not a release target for this work |
+| macOS and Windows | Out of scope | None | Not release targets for this work |
 
 ## Required reporting rule
 
