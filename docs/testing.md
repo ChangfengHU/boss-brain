@@ -61,6 +61,8 @@ Real Codex lifecycle on a disposable machine:
 CODEX_AUTH_SOURCE=/secure/path/auth.json ./tests/remote_codex_e2e.sh
 ```
 
+The real-Codex runner applies a per-turn timeout; override it with `CODEX_TIMEOUT` when diagnosing a slow disposable host. A timeout or assertion failure is evidence of an incomplete canary, not a passing test.
+
 The lifecycle script creates a temporary HOME, copies `auth.json` with mode `0600`, installs Boss Brain, creates two synthetic owned Git repositories with distinct state and Wiki markers, runs ordinary, cross-project, selective-Wiki, low-confidence alias, and resumed read-only Codex turns, validates the final structured answers and event logs, asserts lifecycle state, and deletes the entire temporary directory through a trap. Set `BOSS_KEEP_E2E=1` only when a failed disposable run must be retained for event-level diagnosis.
 
 ## Release gate

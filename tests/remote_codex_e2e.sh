@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CODEX_BIN=${CODEX_BIN:-codex}
+CODEX_TIMEOUT=${CODEX_TIMEOUT:-180}
 AUTH_SOURCE=${CODEX_AUTH_SOURCE:-}
 TEST_OWNER=${BOSS_TEST_OWNER:-boss-brain-test}
 
@@ -16,6 +17,10 @@ if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
   echo "Codex CLI is not installed" >&2
   exit 2
 fi
+
+run_codex() {
+  timeout "$CODEX_TIMEOUT" "$CODEX_BIN" "$@"
+}
 
 SANDBOX_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/boss-codex-e2e.XXXXXX")
 cleanup() {
@@ -75,7 +80,7 @@ case "$PLUGIN_LIST" in
     ;;
 esac
 
-$CODEX_BIN exec \
+run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
@@ -89,7 +94,7 @@ $CODEX_BIN exec \
   >"$SANDBOX_ROOT/events-alpha.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-alpha.json"
 
-$CODEX_BIN exec \
+run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
@@ -103,7 +108,7 @@ $CODEX_BIN exec \
   >"$SANDBOX_ROOT/events-beta.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-beta.json"
 
-$CODEX_BIN exec \
+run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
@@ -117,7 +122,7 @@ $CODEX_BIN exec \
   >"$SANDBOX_ROOT/events-wiki.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-wiki.json"
 
-$CODEX_BIN exec \
+run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
@@ -133,7 +138,7 @@ boss explain --json >"$SANDBOX_ROOT/trace-alias.json"
 
 (
   cd "$ALPHA"
-  $CODEX_BIN exec resume --last \
+  run_codex exec resume --last \
     --disable apps \
     --dangerously-bypass-hook-trust \
     --skip-git-repo-check \
