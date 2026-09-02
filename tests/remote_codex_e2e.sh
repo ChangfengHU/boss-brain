@@ -79,6 +79,7 @@ $CODEX_BIN exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
+  --ignore-user-config \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
@@ -92,6 +93,7 @@ $CODEX_BIN exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
+  --ignore-user-config \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
@@ -105,6 +107,7 @@ $CODEX_BIN exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
+  --ignore-user-config \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
@@ -118,6 +121,7 @@ $CODEX_BIN exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
+  --ignore-user-config \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
@@ -133,6 +137,7 @@ boss explain --json >"$SANDBOX_ROOT/trace-alias.json"
     --disable apps \
     --dangerously-bypass-hook-trust \
     --skip-git-repo-check \
+    --ignore-user-config \
     --json \
     --output-schema "$ROOT/tests/fixtures/user-context.schema.json" \
     --output-last-message "$SANDBOX_ROOT/final-resume.json" \
