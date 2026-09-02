@@ -305,7 +305,12 @@ class UserJourneyTest(unittest.TestCase):
         (repo / ".brain" / "HANDOFF.md").write_text("PRIVATE_HANDOFF_DETAIL\n", encoding="utf-8")
         conventions = repo / ".brain" / "conventions"
         conventions.mkdir()
+        (conventions / "index.md").write_text(
+            "# Conventions\n\n- [Deployment coding](deployment-coding.md)\n",
+            encoding="utf-8",
+        )
         (conventions / "rules.md").write_text("PRIVATE_CONVENTION_DETAIL\n", encoding="utf-8")
+        (conventions / "deployment-coding.md").write_text("PRIVATE_DEPLOYMENT_CONVENTION\n", encoding="utf-8")
         self.assertEqual(self.boss("adopt", str(repo), "--summary", "wiki scope").returncode, 0)
         started = self.boss(
             "hook",
@@ -317,9 +322,11 @@ class UserJourneyTest(unittest.TestCase):
         self.assertNotIn("PRIVATE_WIKI_LESSON", context)
         self.assertNotIn("PRIVATE_HANDOFF_DETAIL", context)
         self.assertNotIn("PRIVATE_CONVENTION_DETAIL", context)
+        self.assertNotIn("PRIVATE_DEPLOYMENT_CONVENTION", context)
         self.assertIn(str(wiki / "index.md"), context)
         self.assertIn("只加载相关条目", context)
         self.assertIn("本地只读命令", context)
+        self.assertIn(str(conventions / "index.md"), context)
         self.assertIn("wiki-index", json.loads(self.boss("explain", "--json").stdout)["sections"])
 
         repeated_name = self.boss(
@@ -346,6 +353,18 @@ class UserJourneyTest(unittest.TestCase):
         self.assertEqual(selected_trace["confidence"], "matched")
         self.assertEqual(selected_trace["content_policy"], "selected-wiki-entry")
         self.assertEqual(selected_trace["sections"], ["wiki"])
+
+        convention = self.boss(
+            "hook",
+            "prompt-submit",
+            payload={"session_id": "wiki-scope", "prompt": "Review the deployment coding convention"},
+        )
+        convention_context = json.loads(convention.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("PRIVATE_DEPLOYMENT_CONVENTION", convention_context)
+        self.assertNotIn("PRIVATE_WIKI_LESSON", convention_context)
+        convention_trace = json.loads(self.boss("explain", "--json").stdout)
+        self.assertEqual(convention_trace["mode"], "conventions")
+        self.assertEqual(convention_trace["content_policy"], "selected-convention-entry")
 
     def test_wiki_selection_is_scoped_deduplicated_and_path_safe(self) -> None:
         alpha = make_repo(self.home / "work" / "alpha-wiki", "ALPHA_WIKI_STATE")
@@ -481,6 +500,64 @@ class UserJourneyTest(unittest.TestCase):
             )
             self.assertIn("ALPHA_RESUME_READY", prompt().stdout)
             self.assertEqual(prompt().stdout, "")
+
+    def test_task_ids_prevent_silent_task_drift_and_feed_explain_trace(self) -> None:
+        repo = make_repo(self.home / "work" / "tasked", "TASKED_READY")
+        tasks = repo / ".brain" / "TASKS.md"
+        tasks.write_text(
+            "# Tasks\n\n"
+            "- [ ] [TASK-ALPHA] stabilize the importer\n"
+            "- [ ] TASK-BETA: migrate the worker\n"
+            "- [x] [TASK-DONE] already shipped\n",
+            encoding="utf-8",
+        )
+        adopted = self.boss("adopt", str(repo), "--summary", "task drift")
+        self.assertEqual(adopted.returncode, 0, adopted.stderr)
+        self.boss(
+            "hook",
+            "session-start",
+            payload={"session_id": "task-drift", "cwd": str(repo), "source": "startup"},
+        )
+
+        selected = self.boss(
+            "hook",
+            "prompt-submit",
+            payload={"session_id": "task-drift", "prompt": "开始 @task:TASK-ALPHA"},
+        )
+        self.assertIn("TASK-ALPHA", selected.stdout)
+        selected_trace = json.loads(self.boss("explain", "--json").stdout)
+        self.assertEqual(selected_trace["mode"], "task")
+        self.assertEqual(selected_trace["task"], "TASK-ALPHA")
+        self.assertEqual(selected_trace["content_policy"], "selected-task")
+
+        drift = self.boss(
+            "hook",
+            "prompt-submit",
+            payload={"session_id": "task-drift", "prompt": "TASK-BETA 也需要看一下"},
+        )
+        self.assertIn("低置信度任务漂移提示", drift.stdout)
+        self.assertIn("@task:ID", drift.stdout)
+        drift_trace = json.loads(self.boss("explain", "--json").stdout)
+        self.assertEqual(drift_trace["mode"], "task-drift")
+        self.assertEqual(drift_trace["task"], "TASK-ALPHA")
+        self.assertEqual(drift_trace["drift_task"], "TASK-BETA")
+
+        switched = self.boss(
+            "hook",
+            "prompt-submit",
+            payload={"session_id": "task-drift", "prompt": "确认切换 @task:TASK-BETA"},
+        )
+        self.assertIn("TASK-BETA", switched.stdout)
+        switched_trace = json.loads(self.boss("explain", "--json").stdout)
+        self.assertEqual(switched_trace["mode"], "task")
+        self.assertEqual(switched_trace["task"], "TASK-BETA")
+
+        completed = self.boss(
+            "hook",
+            "prompt-submit",
+            payload={"session_id": "task-drift", "prompt": "@task:TASK-DONE"},
+        )
+        self.assertEqual(completed.stdout, "")
 
     def test_git_worktree_uses_the_checked_out_worktree_context(self) -> None:
         source = make_repo(self.home / "work" / "source", "SOURCE_READY")
@@ -716,6 +793,51 @@ class UserJourneyTest(unittest.TestCase):
             f"owner={(restored_boss / 'owner').read_text(encoding='utf-8')!r}",
         )
 
+    def test_machine_create_remote_uses_authenticated_gh_contract(self) -> None:
+        remote = self.home / "remotes" / "created-machine.git"
+        remote.parent.mkdir()
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(remote)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        fake_bin = self.home / "fake-bin"
+        fake_bin.mkdir()
+        gh = fake_bin / "gh"
+        gh.write_text(
+            "#!/bin/sh\n"
+            "source=\nprev=\n"
+            "for arg in \"$@\"; do\n"
+            "  if [ \"$prev\" = \"--source\" ]; then source=\"$arg\"; fi\n"
+            "  prev=\"$arg\"\n"
+            "done\n"
+            "printf '%s\\n' \"$*\" > \"$FAKE_GH_LOG\"\n"
+            "git -C \"$source\" remote add origin \"$FAKE_REMOTE\"\n"
+            "git -C \"$source\" push -u origin main >/dev/null 2>&1\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        machine = self.home / "boss-created"
+        env = {
+            **self.env,
+            "PATH": f"{fake_bin}:{self.env['PATH']}",
+            "FAKE_REMOTE": remote.as_uri(),
+            "FAKE_GH_LOG": str(self.home / "gh.log"),
+        }
+        created = self.boss(
+            "machine",
+            "init",
+            "--path",
+            str(machine),
+            "--create-remote",
+            env=env,
+        )
+        self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+        self.assertIn("repo create", (self.home / "gh.log").read_text(encoding="utf-8"))
+        self.assertEqual(git(machine, "remote", "get-url", "origin").stdout.strip(), remote.as_uri())
+        self.assertTrue(git(machine, "rev-parse", "@{u}").stdout.strip())
+
     def test_deleted_registered_project_is_reported_restored_and_idempotent(self) -> None:
         project_remote = self.home / "remotes" / "deleted-project.git"
         machine_remote = self.home / "remotes" / "deleted-machine.git"
@@ -814,6 +936,52 @@ class UserJourneyTest(unittest.TestCase):
         self.assertEqual(json.loads((claude / "settings.json").read_text(encoding="utf-8")), original_claude)
         self.assertFalse((self.home / ".local" / "bin" / "boss").exists())
         self.assertTrue(self.boss_home.exists())
+
+    def test_handoff_and_index_checks_report_and_run_only_safe_acceptance(self) -> None:
+        repo = make_repo(self.home / "work" / "checks", "CHECKS_READY")
+        brain = repo / ".brain"
+        (brain / "HANDOFF.md").write_text(
+            "# Handoff\n\n## Purpose\nThis project.\n\n## Assets and access\nSee Vault.\n\n"
+            "## Reading order\nRead STATE.\n\n## Verification\nRun acceptance.\n\n## Hazards\nNo secrets.\n",
+            encoding="utf-8",
+        )
+        (brain / "HANDOFF_ACCEPTANCE.md").write_text(
+            "# Acceptance\n\n- [ ] REQUIRED SAFE `git status` => On branch\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.boss("adopt", str(repo), "--summary", "checks").returncode, 0)
+        not_run = self.boss("handoff", "check", str(repo), "--json")
+        self.assertEqual(not_run.returncode, 1)
+        not_run_value = json.loads(not_run.stdout)
+        self.assertFalse(not_run_value["ready"])
+        self.assertTrue(any(item["status"] == "NOT_RUN" for item in not_run_value["checks"]))
+        ran = self.boss("handoff", "check", str(repo), "--run", "--json")
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        ran_value = json.loads(ran.stdout)
+        self.assertTrue(ran_value["ready"])
+        self.assertTrue(all(item["status"] == "PASS" for item in ran_value["checks"]))
+
+        wiki = brain / "wiki"
+        wiki.mkdir()
+        (wiki / "index.md").write_text(
+            "# Wiki\n\n- [Broken](missing.md)\n- [Broken again](missing.md)\n- [Escape](../../README.md)\n",
+            encoding="utf-8",
+        )
+        (wiki / "orphan.md").write_text("orphan\n", encoding="utf-8")
+        checked = self.boss("wiki", "check", str(repo), "--json")
+        self.assertEqual(checked.returncode, 1)
+        diagnostics = json.loads(checked.stdout)
+        self.assertEqual(diagnostics["broken"], ["missing.md"])
+        self.assertEqual(diagnostics["duplicates"], ["missing.md"])
+        self.assertEqual(diagnostics["unsafe"], ["../../README.md"])
+        self.assertEqual(diagnostics["orphan"], ["orphan.md"])
+
+        conventions = brain / "conventions"
+        conventions.mkdir()
+        (conventions / "rules.md").write_text("rules\n", encoding="utf-8")
+        fixed = self.boss("conventions", "check", str(repo), "--fix", "--json")
+        self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
+        self.assertIn("rules.md", (conventions / "index.md").read_text(encoding="utf-8"))
 
     def test_status_commands_return_actionable_user_output(self) -> None:
         repo = make_repo(self.home / "work" / "visible", "VISIBLE_READY")

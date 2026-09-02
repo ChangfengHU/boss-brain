@@ -33,6 +33,8 @@ The deterministic suite treats a workflow as complete only when the user can rec
 - a redacted context trace through `boss explain`, `boss explain --json`, and `boss explain --show`;
 - checked-out Git worktree context and a two-second normal-hook latency budget;
 - TASKS filtering/refresh, relation/capability routing, operational large-state capping, and non-eager Wiki/HANDOFF/conventions behavior;
+- stable TASK IDs, explicit task switching, and natural-mention drift warnings;
+- Wiki/conventions index diagnostics (broken, unsafe, duplicate, orphan, stale) and HANDOFF acceptance checks with a safe-command runner;
 - duplicate prompt suppression plus resume/compact reinjection;
 - a guarded unpushed-commit block that clears after the user pushes;
 - a strict continuity block that clears after evidence, state, dev-log, and capability records are complete;
@@ -67,4 +69,4 @@ A build is eligible for preview release only when the deterministic suite, plugi
 
 ## Deliberately not claimed yet
 
-The current suite does not prove interactive hook trust review, Claude Code behavior, macOS/Windows compatibility, GitHub repository creation, multi-day systemd stability, or recovery from a real reclaimed machine. Those remain explicit release boundaries rather than assumed coverage.
+The current suite does not prove interactive hook trust review, Claude Code behavior, macOS/Windows compatibility, creation against a real GitHub account, multi-day systemd stability, semantic Wiki consolidation, or recovery from a real reclaimed machine. Those remain explicit release boundaries rather than assumed coverage.

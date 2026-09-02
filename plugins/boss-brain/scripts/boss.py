@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -408,6 +410,71 @@ def active_tasks(brain: Path) -> list[str]:
     return [line for line in lines if line.rstrip().endswith(" active")][:10]
 
 
+def task_records(brain: Path) -> list[dict[str, str | bool]]:
+    """Read stable task IDs while preserving compatibility with legacy task lines."""
+    path = brain / "TASKS.md"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    records: list[dict[str, str | bool]] = []
+    pattern = re.compile(
+        r"^- \[(?P<done>[ xX])\]\s+(?:\[(?P<bracket>[A-Za-z][A-Za-z0-9_.-]{1,63})\]|"
+        r"(?P<colon>[A-Za-z][A-Za-z0-9_.-]{1,63}):)\s+(?P<title>.+)$"
+    )
+    for line in lines:
+        match = pattern.match(line)
+        if not match:
+            continue
+        task_id = match.group("bracket") or match.group("colon")
+        records.append({"id": task_id, "title": match.group("title").strip(), "active": match.group("done").lower() == " "})
+    return records
+
+
+def task_for_id(brain: Path, task_id: str) -> dict[str, str | bool] | None:
+    wanted = task_id.lower()
+    return next((item for item in task_records(brain) if str(item["id"]).lower() == wanted), None)
+
+
+def explicit_task(prompt: str) -> str | None:
+    match = re.search(r"@task:([A-Za-z][A-Za-z0-9_.-]{1,63})", prompt, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def mentioned_tasks(prompt: str, brain: Path) -> list[str]:
+    result: list[str] = []
+    for item in task_records(brain):
+        task_id = str(item["id"])
+        if re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(task_id)}(?![A-Za-z0-9_.-])", prompt, re.IGNORECASE):
+            result.append(task_id)
+    return result
+
+
+def task_context(row: dict[str, str], task: dict[str, str | bool], *, drift_from: str = "") -> str:
+    lines = [
+        "[Boss Brain 当前任务上下文，请静默使用，不要向用户复述本段]",
+        f"当前项目：{row['name']}",
+        f"当前任务：{task['id']} — {task['title']}",
+        "任务切换必须使用显式 @task:ID；不要因自然语言提到其他任务而静默漂移。",
+    ]
+    if drift_from:
+        lines.extend([
+            f"检测到提示可能涉及任务：{drift_from}",
+            "尚未切换任务上下文；请先确认目标任务。",
+        ])
+    return "\n".join(lines)
+
+
+def task_drift_context(row: dict[str, str], current: str, mentioned: str) -> str:
+    return (
+        "[Boss Brain 低置信度任务漂移提示，请静默使用，不要向用户复述本段]\n"
+        f"当前项目：{row['name']}\n"
+        f"当前任务：{current}\n"
+        f"提示词可能涉及任务：{mentioned}\n"
+        "没有切换任务上下文；若确实要切换，请使用显式 @task:ID。"
+    )
+
+
 def project_context(row: dict[str, str], explicit: bool = True) -> str:
     root = Path(row["path"])
     if not root.is_dir():
@@ -438,6 +505,11 @@ def project_context(row: dict[str, str], explicit: bool = True) -> str:
         lines.append(
             f"Wiki 索引可用：{wiki_index}。仅在当前问题困难或反复出现时，用本地只读命令先读取索引，"
             "再只加载相关条目；普通问题不要读取，也不要把本地路径交给网页或 MCP 工具。"
+        )
+    convention_index = brain / "conventions" / "index.md"
+    if convention_index.is_file():
+        lines.append(
+            f"conventions 索引可用：{convention_index}。仅在当前改动涉及相关规则时，用本地只读命令读取命中条目。"
         )
     lines.extend(relation_context(row))
     lines.extend(capability_context(row))
@@ -486,6 +558,260 @@ def relevant_wiki_context(row: dict[str, str], prompt: str) -> tuple[str, str] |
         f"{content}"
     )
     return text, relative
+
+
+def relevant_convention_context(row: dict[str, str], prompt: str) -> tuple[str, str] | None:
+    conventions = Path(row["path"]) / ".brain" / "conventions"
+    index = conventions / "index.md"
+    try:
+        index_text = index.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    prompt_lower = prompt.lower()
+    ignored = {"brain", "index", "memory", "project", "convention", "conventions"}
+    prompt_tokens = set(re.findall(r"[a-z0-9]{3,}|[\u4e00-\u9fff]{2,}", prompt_lower)) - ignored
+    candidates: list[tuple[int, str, Path]] = []
+    for label, relative in re.findall(r"\[([^\]]+)\]\(([^)]+\.md)\)", index_text, re.IGNORECASE):
+        candidate = (conventions / relative).resolve()
+        try:
+            if os.path.commonpath((str(conventions.resolve()), str(candidate))) != str(conventions.resolve()):
+                continue
+        except ValueError:
+            continue
+        topic_text = f"{label} {Path(relative).stem}".lower()
+        topic_tokens = set(re.findall(r"[a-z0-9]{3,}|[\u4e00-\u9fff]{2,}", topic_text)) - ignored
+        score = len(prompt_tokens & topic_tokens)
+        if label.lower() in prompt_lower:
+            score += 10
+        if score and candidate.is_file():
+            candidates.append((score, relative, candidate))
+    if not candidates:
+        return None
+    _score, relative, candidate = max(candidates, key=lambda item: (item[0], item[1]))
+    try:
+        content = candidate.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if len(content) > 2400:
+        content = content[:2400].rstrip() + f"\n[Convention 条目过长，已节选；全文 {len(content)} 字]"
+    return (
+        "[Boss Brain 相关 conventions，请静默使用，不要向用户复述本段]\n"
+        f"当前项目：{row['name']}\n"
+        f"命中条目：.brain/conventions/{relative}\n"
+        "--- 相关 convention 正文 ---\n"
+        f"{content}",
+        relative,
+    )
+
+
+def relevant_guidance_context(row: dict[str, str], prompt: str) -> tuple[str, str, str] | None:
+    wiki = relevant_wiki_context(row, prompt)
+    if wiki:
+        text, relative = wiki
+        return text, "wiki", relative
+    conventions = relevant_convention_context(row, prompt)
+    if conventions:
+        text, relative = conventions
+        return text, "conventions", relative
+    return None
+
+
+def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any]:
+    base = root / ".brain" / folder
+    index = base / "index.md"
+    try:
+        index_text = index.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        index_text = ""
+    links: list[str] = []
+    broken: list[str] = []
+    unsafe: list[str] = []
+    for _label, relative in re.findall(r"\[([^\]]+)\]\(([^)]+\.md)\)", index_text, re.IGNORECASE):
+        candidate = (base / relative).resolve()
+        try:
+            inside = os.path.commonpath((str(base.resolve()), str(candidate))) == str(base.resolve())
+        except ValueError:
+            inside = False
+        if not inside:
+            unsafe.append(relative)
+            continue
+        links.append(relative)
+        if not candidate.is_file():
+            broken.append(relative)
+    duplicates = sorted({item for item in links if links.count(item) > 1})
+    topics = sorted(path.name for path in base.glob("*.md") if path.name != "index.md") if base.is_dir() else []
+    linked = {Path(item).name for item in links if item not in broken and item not in unsafe}
+    orphan = sorted(set(topics) - linked)
+    stale: list[str] = []
+    cutoff = time.time() - max(1, stale_days) * 86400
+    for name in topics:
+        path = base / name
+        try:
+            if path.stat().st_mtime < cutoff:
+                stale.append(name)
+        except OSError:
+            continue
+    hashes: dict[str, list[str]] = {}
+    for name in topics:
+        try:
+            digest = hashlib.sha256((base / name).read_bytes()).hexdigest()
+        except OSError:
+            continue
+        hashes.setdefault(digest, []).append(name)
+    duplicate_content = sorted(sorted(names) for names in hashes.values() if len(names) > 1)
+    return {
+        "folder": folder,
+        "index": str(index),
+        "index_missing": not index.is_file() and bool(topics),
+        "broken": sorted(set(broken)),
+        "unsafe": sorted(set(unsafe)),
+        "duplicates": duplicates,
+        "orphan": orphan,
+        "stale": sorted(stale),
+        "duplicate_content": duplicate_content,
+    }
+
+
+def fix_index(root: Path, folder: str, diagnostics: dict[str, Any]) -> bool:
+    base = root / ".brain" / folder
+    index = base / "index.md"
+    if not diagnostics["orphan"] and not diagnostics["index_missing"]:
+        return False
+    base.mkdir(parents=True, exist_ok=True)
+    if index.exists():
+        content = index.read_text(encoding="utf-8", errors="replace")
+    else:
+        content = f"# {folder.title()}\n\n"
+    additions = "".join(
+        f"- [{Path(name).stem.replace('-', ' ').replace('_', ' ').title()}]({name})\n"
+        for name in diagnostics["orphan"]
+    )
+    atomic_write(index, content.rstrip() + "\n" + additions, 0o644)
+    return True
+
+
+def cmd_index_check(args: argparse.Namespace) -> int:
+    root = git_root(args.path)
+    if not root:
+        print("not a Git repository", file=sys.stderr)
+        return 2
+    diagnostics = index_diagnostics(root, args.folder, args.stale_days)
+    before_orphan_count = len(diagnostics["orphan"])
+    changed = fix_index(root, args.folder, diagnostics) if args.fix else False
+    if changed:
+        diagnostics = index_diagnostics(root, args.folder, args.stale_days)
+        diagnostics["fixed"] = True
+    else:
+        diagnostics["fixed"] = False
+    failed = any(diagnostics[key] for key in ("index_missing", "broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content"))
+    if args.json:
+        print(json.dumps(diagnostics, ensure_ascii=False, indent=2))
+    else:
+        print(f"{args.folder}: {'CHECK' if failed else 'PASS'}")
+        for key in ("broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content"):
+            if diagnostics[key]:
+                print(f"{key}: {diagnostics[key]}")
+        if changed:
+            print(f"fixed: appended {before_orphan_count} index entries")
+    return 1 if failed else 0
+
+
+def handoff_sections(text: str) -> dict[str, bool]:
+    headings = [item.lower().strip() for item in re.findall(r"(?m)^#{2,6}\s+(.+?)\s*$", text)]
+    groups = {
+        "purpose": ("purpose", "这是什么", "目的", "简介"),
+        "access": ("assets", "access", "资产", "访问", "凭据"),
+        "order": ("reading order", "阅读顺序"),
+        "verification": ("verification", "verify", "如何验证", "验证"),
+        "hazards": ("hazards", "hazard", "雷区", "风险", "注意事项"),
+    }
+    return {key: any(any(alias in heading for alias in aliases) for heading in headings) for key, aliases in groups.items()}
+
+
+def acceptance_entries(path: Path) -> list[dict[str, str | bool]]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    pattern = re.compile(
+        r"^- \[(?P<done>[ xX])\]\s+(?P<level>REQUIRED|OPTIONAL)(?:\s+(?P<safe>SAFE))?\s+"
+        r"`(?P<command>[^`]+)`(?:\s*=>\s*(?P<expected>.*))?$",
+        re.IGNORECASE,
+    )
+    return [
+        {
+            "done": match.group("done").lower() == "x",
+            "level": match.group("level").upper(),
+            "safe": bool(match.group("safe")),
+            "command": match.group("command").strip(),
+            "expected": (match.group("expected") or "").strip(),
+        }
+        for line in text.splitlines()
+        if (match := pattern.match(line.strip()))
+    ]
+
+
+def safe_acceptance_command(command: str) -> bool:
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False
+    if not parts or any(token in {"-c", "--eval", "push", "publish", "apply", "destroy", "rm"} for token in parts):
+        return False
+    executable = Path(parts[0]).name
+    if executable in {"git"}:
+        return len(parts) > 1 and parts[1] in {"status", "diff", "log", "rev-parse", "show"}
+    if executable in {"python", "python3"}:
+        return len(parts) > 2 and parts[1] == "-m" and parts[2] in {"unittest", "pytest", "compileall"}
+    if executable in {"pytest", "go", "cargo", "npm", "pnpm", "yarn", "make"}:
+        return any(token in {"test", "tests", "check", "lint"} for token in parts[1:])
+    return False
+
+
+def cmd_handoff_check(args: argparse.Namespace) -> int:
+    root = git_root(args.path)
+    if not root:
+        print("not a Git repository", file=sys.stderr)
+        return 2
+    brain = root / ".brain"
+    handoff = brain / "HANDOFF.md"
+    acceptance = brain / "HANDOFF_ACCEPTANCE.md"
+    try:
+        handoff_text = handoff.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        handoff_text = ""
+    sections = handoff_sections(handoff_text)
+    entries = acceptance_entries(acceptance)
+    checks: list[dict[str, Any]] = [
+        {"id": key, "required": True, "status": "PASS" if value else "FAIL"}
+        for key, value in sections.items()
+    ]
+    checks.append({"id": "handoff-file", "required": True, "status": "PASS" if handoff_text else "FAIL"})
+    checks.append({"id": "acceptance-file", "required": True, "status": "PASS" if acceptance.is_file() else "FAIL"})
+    required_entries = [entry for entry in entries if entry["level"] == "REQUIRED"]
+    if not required_entries:
+        checks.append({"id": "required-acceptance", "required": True, "status": "FAIL"})
+    for index, entry in enumerate(required_entries, 1):
+        result: dict[str, Any] = {
+            "id": f"acceptance-{index}",
+            "required": True,
+            "command": entry["command"],
+            "status": "NOT_RUN",
+        }
+        if args.run and entry["safe"] and safe_acceptance_command(str(entry["command"])):
+            completed = run(shlex.split(str(entry["command"])), cwd=root, timeout=120)
+            output = completed.stdout + completed.stderr
+            result["status"] = "PASS" if completed.returncode == 0 and (not entry["expected"] or str(entry["expected"]) in output) else "FAIL"
+        checks.append(result)
+    failed = any(item["required"] and item["status"] != "PASS" for item in checks)
+    result = {"project": str(root), "run": bool(args.run), "checks": checks, "ready": not failed}
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        for item in checks:
+            print(f"{item['status']} {item['id']}")
+        print("READY" if not failed else "NOT_READY")
+    return 1 if failed else 0
 
 
 def relation_context(row: dict[str, str]) -> list[str]:
@@ -565,6 +891,17 @@ def claim_root(session_id: str, root: Path) -> None:
     save_session(session_id, value)
 
 
+def initialize_task(session_id: str, root: Path) -> None:
+    value = load_session(session_id)
+    info = value.setdefault("roots", {}).get(str(root.resolve()))
+    if not isinstance(info, dict) or info.get("task_id"):
+        return
+    active = [item for item in task_records(root / ".brain") if item["active"]]
+    if len(active) == 1:
+        info["task_id"] = active[0]["id"]
+        save_session(session_id, value)
+
+
 def context_sections(mode: str, text: str) -> list[str]:
     if mode == "alias":
         return ["pointer"]
@@ -572,10 +909,15 @@ def context_sections(mode: str, text: str) -> list[str]:
         return ["project-index"]
     if mode == "wiki":
         return ["wiki"]
+    if mode == "conventions":
+        return ["conventions"]
+    if mode in ("task", "task-drift"):
+        return ["task"]
     checks = (
         ("state", "--- .brain/STATE.md ---"),
         ("tasks", "活跃任务："),
         ("wiki-index", "Wiki 索引可用："),
+        ("conventions-index", "conventions 索引可用："),
         ("relations", "--- 跨项目关系 ---"),
         ("capabilities", "--- 能力关系 ---"),
     )
@@ -589,6 +931,8 @@ def remember_context(
     text: str,
     event: str,
     identity: str = "",
+    task_id: str = "",
+    drift_task: str = "",
 ) -> None:
     value = load_session(session_id)
     key = f"{mode}:{row['name'] if row else '-'}:{identity}"
@@ -598,15 +942,20 @@ def remember_context(
         "at": now_iso(),
         "event": event,
         "mode": mode,
-        "confidence": {"workspace": "workspace", "explicit": "high", "alias": "low", "roster": "index", "wiki": "matched"}.get(mode, "unknown"),
+        "confidence": {"workspace": "workspace", "explicit": "high", "alias": "low", "roster": "index", "wiki": "matched", "conventions": "matched", "task": "high", "task-drift": "low"}.get(mode, "unknown"),
         "content_policy": {
             "workspace": "full-project",
             "explicit": "full-project",
             "alias": "pointer-only",
             "roster": "project-index",
             "wiki": "selected-wiki-entry",
+            "conventions": "selected-convention-entry",
+            "task": "selected-task",
+            "task-drift": "pointer-only",
         }.get(mode, "unknown"),
         "project": row["name"] if row else None,
+        "task": task_id or None,
+        "drift_task": drift_task or None,
         "chars": len(redacted),
         "sections": context_sections(mode, redacted),
     }
@@ -650,6 +999,10 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             added.extend(just_added)
             rows = read_registry()
         claim_root(session_id, root)
+        initialize_task(session_id, root)
+        session = load_session(session_id)
+        root_info = session.get("roots", {}).get(str(root.resolve()), {})
+        task_id = str(root_info.get("task_id") or "") if isinstance(root_info, dict) else ""
         match = next((row for row in rows if Path(row["path"]).resolve() == root), None)
         if match:
             text = project_context(match)
@@ -665,7 +1018,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             names = ", ".join(row["name"] for row in added)
             text += f"\nBoss 本轮静默登记了项目：{names}。不要为补元数据打断用户当前任务。"
         ensure_machine_initialized()
-        remember_context(session_id, "workspace", match, text, "SessionStart")
+        remember_context(session_id, "workspace", match, text, "SessionStart", task_id=task_id)
         hook_output("SessionStart", text)
         return 0
     if rows:
@@ -693,21 +1046,64 @@ def hook_prompt(payload: dict[str, Any]) -> int:
     explicit = explicit_project(prompt, rows)
     at_context = bool(re.search(r"@(?=\s|$)", prompt))
     identity = ""
-    if explicit:
+    task_id = ""
+    drift_task = ""
+    claimed = session.get("roots", {})
+    current = next(
+        (item for item in rows if str(Path(item["path"]).resolve()) in claimed),
+        None,
+    )
+    current_info = claimed.get(str(Path(current["path"]).resolve()), {}) if current else {}
+    current_task = str(current_info.get("task_id") or "") if isinstance(current_info, dict) else ""
+    task_token = explicit_task(prompt)
+    if task_token:
+        target = explicit or current
+        task = task_for_id(Path(target["path"]) / ".brain", task_token) if target else None
+        if not target or not task or not task["active"]:
+            return 0
+        root = Path(target["path"])
+        if root.is_dir():
+            claim_root(session_id, root)
+            session = load_session(session_id)
+            session.setdefault("roots", {}).setdefault(str(root.resolve()), {})["task_id"] = task["id"]
+            save_session(session_id, session)
+        task_id = str(task["id"])
+        text = task_context(target, task)
+        mode, row, identity = "task", target, task_id
+    elif current and current_task and (
+        explicit or mentioned_tasks(prompt, Path(current["path"]) / ".brain")
+    ):
+        mentioned = mentioned_tasks(prompt, Path(current["path"]) / ".brain")
+        if mentioned and mentioned[0].lower() != current_task.lower():
+            drift_task = mentioned[0]
+            text = task_drift_context(current, current_task, drift_task)
+            mode, row, identity, task_id = "task-drift", current, f"{current_task}->{drift_task}", current_task
+        elif explicit:
+            root = Path(explicit["path"])
+            if root.is_dir():
+                claim_root(session_id, root)
+            guidance = relevant_guidance_context(explicit, prompt)
+            if guidance:
+                text, mode, identity = guidance
+                row = explicit
+            else:
+                mode, row, text = "explicit", explicit, project_context(explicit)
+        else:
+            return 0
+    elif explicit:
         root = Path(explicit["path"])
         if root.is_dir():
             claim_root(session_id, root)
-        wiki_match = relevant_wiki_context(explicit, prompt)
-        if wiki_match:
-            text, identity = wiki_match
-            mode, row = "wiki", explicit
+        guidance = relevant_guidance_context(explicit, prompt)
+        if guidance:
+            text, mode, identity = guidance
+            row = explicit
         else:
             mode, row, text = "explicit", explicit, project_context(explicit)
     elif at_context:
         mode, row, text = "roster", None, roster_context(rows)
     elif "@" not in prompt:
         alias = alias_project(prompt, rows)
-        claimed = session.get("roots", {})
         if alias and str(Path(alias["path"]).resolve()) not in claimed:
             mode, row = "alias", alias
             text = (
@@ -722,17 +1118,17 @@ def hook_prompt(payload: dict[str, Any]) -> int:
                     (row for row in rows if str(Path(row["path"]).resolve()) in claimed),
                     None,
                 )
-            wiki_match = relevant_wiki_context(target, prompt) if target else None
-            if not wiki_match:
+            guidance = relevant_guidance_context(target, prompt) if target else None
+            if not guidance:
                 return 0
-            text, identity = wiki_match
-            mode, row = "wiki", target
+            text, mode, identity = guidance
+            row = target
     else:
         return 0
     key = f"{mode}:{row['name'] if row else '-'}:{identity}"
     if session.get("last_injection") == key:
         return 0
-    remember_context(session_id, mode, row, text, "UserPromptSubmit", identity)
+    remember_context(session_id, mode, row, text, "UserPromptSubmit", identity, task_id, drift_task)
     hook_output("UserPromptSubmit", text)
     return 0
 
@@ -781,7 +1177,7 @@ def commit_is_recorded(commit: str, recorded: set[str]) -> bool:
     return any(commit.startswith(value) or value.startswith(commit) for value in recorded if len(value) >= 7)
 
 
-def audit_repo(root: Path, baseline: str, policy: str) -> list[dict[str, str]]:
+def audit_repo(root: Path, baseline: str, policy: str, active_task: str = "") -> list[dict[str, str]]:
     commits = changed_commits(root, baseline)
     if not commits:
         return []
@@ -808,6 +1204,12 @@ def audit_repo(root: Path, baseline: str, policy: str) -> list[dict[str, str]]:
         findings.append({"code": "evidence", "level": "continuity", "message": f"{root} 最新工作提交尚未被 evidence.jsonl 记录。"})
     if not evidence or "wiki" not in evidence:
         findings.append({"code": "wiki-judgment", "level": "continuity", "message": f"{root} 最新证据缺少 wiki 判断字段。"})
+    stable_tasks = [item for item in task_records(brain) if item["active"]]
+    if stable_tasks:
+        if not active_task:
+            findings.append({"code": "task-context", "level": "continuity", "message": f"{root} 有稳定任务 ID，但本会话没有确认当前任务。"})
+        elif not evidence or str(evidence.get("task_id") or "").lower() != active_task.lower():
+            findings.append({"code": "task-evidence", "level": "continuity", "message": f"{root} 最新证据没有记录当前任务 {active_task}。"})
     changed = set(git(root, "diff", "--name-only", f"{baseline}..HEAD", "--", ".brain").splitlines())
     if ".brain/STATE.md" not in changed:
         findings.append({"code": "state", "level": "continuity", "message": f"{root} 有新工作提交，但 STATE.md 未随本会话更新。"})
@@ -854,7 +1256,7 @@ def hook_stop(payload: dict[str, Any]) -> int:
     for path, info in session.get("roots", {}).items():
         repo = Path(path)
         if repo.is_dir() and (repo / ".git").exists():
-            findings.extend(audit_repo(repo, str(info.get("baseline") or ""), policy))
+            findings.extend(audit_repo(repo, str(info.get("baseline") or ""), policy, str(info.get("task_id") or "")))
     append_audit(session_id, findings)
     if policy == "quiet":
         print("{}")
@@ -1446,6 +1848,9 @@ def cmd_explain(args: argparse.Namespace) -> int:
     print(f"EVENT    {value.get('event') or '-'}")
     print(f"MODE     {value.get('mode') or '-'} ({value.get('confidence') or 'unknown'} confidence)")
     print(f"PROJECT  {value.get('project') or '-'}")
+    print(f"TASK     {value.get('task') or '-'}")
+    if value.get("drift_task"):
+        print(f"DRIFT    {value['drift_task']}")
     print(f"CONTENT  {value.get('content_policy') or '-'}")
     print(f"SECTIONS {', '.join(value.get('sections') or []) or '-'}")
     print(f"CHARS    {value.get('chars') or 0}")
@@ -1530,6 +1935,22 @@ def parser() -> argparse.ArgumentParser:
     explain_output.add_argument("--json", action="store_true")
     explain_output.add_argument("--show", action="store_true")
     explain.set_defaults(func=cmd_explain)
+    for name in ("wiki", "conventions"):
+        group = subs.add_parser(name)
+        group_subs = group.add_subparsers(dest=f"{name}_command", required=True)
+        check = group_subs.add_parser("check")
+        check.add_argument("path", nargs="?", default=".")
+        check.add_argument("--fix", action="store_true")
+        check.add_argument("--stale-days", type=int, default=180)
+        check.add_argument("--json", action="store_true")
+        check.set_defaults(func=cmd_index_check, folder=name)
+    handoff = subs.add_parser("handoff")
+    handoff_subs = handoff.add_subparsers(dest="handoff_command", required=True)
+    handoff_check = handoff_subs.add_parser("check")
+    handoff_check.add_argument("path", nargs="?", default=".")
+    handoff_check.add_argument("--run", action="store_true")
+    handoff_check.add_argument("--json", action="store_true")
+    handoff_check.set_defaults(func=cmd_handoff_check)
     scan = subs.add_parser("scan")
     scan.add_argument("--adopt", action="store_true")
     scan.add_argument("--json", action="store_true")

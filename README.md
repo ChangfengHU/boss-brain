@@ -43,6 +43,9 @@ boss caps
 boss risk
 boss explain
 boss explain --show
+boss wiki check
+boss conventions check
+boss handoff check --run
 boss policy quiet|guarded|strict
 boss machine init --name boss-MACHINE
 boss machine init --name boss-IP --create-remote --timer

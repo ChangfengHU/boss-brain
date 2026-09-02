@@ -18,10 +18,11 @@ Passing test counts are not a product-completeness claim. A capability is called
 | `TASKS.md` active checkbox and legacy `active` parsing | Verified | current/complete/limit/refresh and legacy tests | There is no task state machine or task ID integrity yet |
 | Cross-project relations and capability peers | Verified | relations/capability injection test | Interface availability is not actively probed |
 | Wiki index routing and selective topic injection | Verified locally and with real Codex | startup/body separation, multi-topic dedupe, cross-project scoping, path containment, and remote unique-marker answer without tools | Matching is index-title/token based, not semantic retrieval |
-| Wiki consolidation, index maintenance, deduplication, and staleness | Not implemented | None | Planned optional Brain Evolution layer |
-| HANDOFF and HANDOFF_ACCEPTANCE workflows | Not automated | None | Skill-driven assessment/preparation needs dedicated acceptance fixtures |
-| Conventions selection and enforcement | Not automated | None | No runtime selector or validator exists |
-| Goal-level task-drift detection | Not implemented | None | Sessions track repositories and commit baselines, not user goals or task IDs |
+| Wiki index maintenance, path safety, duplicate/orphan/stale checks | Verified locally | `boss wiki check` diagnostics and `--fix` journey | Semantic consolidation and lesson merging remain unimplemented |
+| HANDOFF and HANDOFF_ACCEPTANCE workflows | Verified locally | `boss handoff check` static contract plus safe command execution journey | Interactive takeover remains skill-driven |
+| Conventions selection and index checks | Verified locally | prompt-matched convention injection and `boss conventions check` journey | No global policy conflict resolver yet |
+| Stable task-ID drift detection | Verified locally | task ID selection, natural-mention warning, explicit `@task:ID` switch, completed-task rejection, and explain trace | Free-form goal drift without a stable task ID remains outside the model |
+| Free-form goal-level drift detection | Not implemented | None | Sessions do not infer user goals or create task IDs automatically |
 | Project-target drift prevention | Partial | alias pointer does not claim or load; explicit target does | Concurrent multi-agent task ownership is not modeled |
 | Evidence must reference latest work commit | Verified | strict and stale-evidence tests | Evidence command/result schema is not fully validated |
 | Wiki judgment required in evidence | Verified as a field gate | strict missing-then-present judgment test | Judgment truthfulness cannot be inferred automatically |
@@ -33,7 +34,7 @@ Passing test counts are not a product-completeness claim. A capability is called
 | Missing/deleted project detection and clone recovery | Verified with local Git remote | explicit delete, MISSING status, restore, idempotency test | Uncommitted files are unrecoverable by design |
 | Corrupt inventory and unavailable project remote | Verified | corrupt/unavailable restore test | Interrupted partial clone and disk-full faults |
 | Clean replacement-machine restore | Verified in isolated HOME | clean-machine restore journey | Real reclaimed host with Vault bootstrap |
-| GitHub repository creation | Not automated | None | Requires a disposable authenticated GitHub account |
+| GitHub repository creation command path | Verified with fake CLI | machine init fake-`gh` contract test | Real GitHub account/repository creation remains an external canary |
 | systemd timer generation and enable failure | Partial | interval and fake-controller tests | Multi-day live timer/push canary |
 | Vault reference containment | Verified for accepted/rejected shapes | Vault and snapshot security tests | Real Vault outage behavior |
 | Install/update/uninstall/rollback preservation | Verified in isolated HOME | installer and rollback tests | Interactive existing-plugin trust UX |

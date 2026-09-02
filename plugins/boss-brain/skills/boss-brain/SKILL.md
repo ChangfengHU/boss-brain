@@ -12,6 +12,7 @@ Boss Brain is a background continuity layer, not a required workflow. Boss is ma
 - Complete the user's task first. Memory updates are a closing action and must not interrupt ordinary work.
 - Infer the workspace from the request, current Git root, or registry. Ask one short question only when the target truly cannot be determined.
 - Read `.brain/wiki/index.md` before re-solving a difficult or recurring project problem. Load only relevant entries.
+- When `.brain/TASKS.md` uses stable IDs such as `- [ ] [TASK-123] ...`, keep the session on its selected task. A natural mention of another task is a drift warning; switch only after the user explicitly uses `@task:TASK-123`.
 - Make no `.brain/` writes during pure Q&A or read-only work.
 - Never print, copy into documentation, or commit secret values. Record only credential names, locations, owners, and recovery methods.
 - Do not create empty memory templates. Project memory grows from verified facts.
@@ -24,6 +25,7 @@ Boss Brain is a background continuity layer, not a required workflow. Boss is ma
 When code or project state changes, follow the repository's own instructions first. If a commit is produced, keep the minimal continuity records already used by that repository consistent, then push when the repository policy requires it. Never claim another concurrent session's changes.
 
 Use `boss projects`, `boss status`, `boss caps`, and `boss risk` only when the user asks for a portfolio view or when it directly resolves the current task. Use `boss explain` when the user asks what context was loaded. Use `boss scan --adopt` for an explicit immediate patrol.
+Use `boss wiki check`, `boss conventions check`, and `boss handoff check` when the user asks whether project memory or takeover material is complete; add `--fix` or `--run` only when that mutation or command execution is explicitly requested.
 
 Machine recovery lives in a separate `boss-<machine-id>` Git repository. Use `boss machine init`, `boss machine sync --push`, and `boss machine restore` only when the user asks to configure, synchronize, or recover a machine. The generated repository contains inventory and Vault references, never credentials.
 

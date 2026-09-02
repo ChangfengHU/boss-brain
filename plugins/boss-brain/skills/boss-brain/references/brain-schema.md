@@ -5,9 +5,9 @@ Project memory lives in `.brain/` inside the repository unless `.brain-home` poi
 Create files only when verified information exists:
 
 - `STATE.md`: a short current-state card with status, next action, blockers, critical paths, and current hazards.
-- `TASKS.md`: active/completed/deferred work. Mark inferred historical status as unconfirmed.
+- `TASKS.md`: active/completed/deferred work. For drift protection, use stable IDs in active checkbox lines, for example `- [ ] [TASK-123] short title` or `- [ ] TASK-123: short title`; mark inferred historical status as unconfirmed.
 - `HANDOFF.md`: stable receiving protocol—what this is, assets and access locations, reading order, verification procedure, and hazards. Prefer commands for discovering current values over stale snapshots.
-- `HANDOFF_ACCEPTANCE.md`: executable takeover checks with required/optional status.
+- `HANDOFF_ACCEPTANCE.md`: executable takeover checks with required/optional status. Use lines such as `- [ ] REQUIRED SAFE \`python3 -m unittest\` => OK`; `--run` executes only the safe allow-list.
 - `capabilities.tsv`: tab-separated `provides|consumes`, stable capability id, interface location, and summary.
 - `evidence.jsonl` or `tasks/*/evidence.jsonl`: one JSON object per materially verified work result. Include the commit, verification command/result, and a `wiki` judgment.
 - `dev-log/YYYY-MM-DD.md`: concise narrative of work that produced commits.

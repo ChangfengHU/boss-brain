@@ -1,6 +1,6 @@
 {
   "name": "boss-brain",
-  "version": "0.1.0+codex.20260901210223",
+  "version": "0.1.0+codex.20260902025557",
   "description": "Machine-level project control and portable project memory for coding agents.",
   "author": {
     "name": "ChangfengHU"
