@@ -115,7 +115,10 @@ def registry_path() -> Path:
     return runtime_home() / "registry.tsv"
 
 
-def run(command: list[str], cwd: Path | None = None, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str], cwd: Path | None = None, timeout: int = 10,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             command,
@@ -125,6 +128,7 @@ def run(command: list[str], cwd: Path | None = None, timeout: int = 10) -> subpr
             stderr=subprocess.PIPE,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return subprocess.CompletedProcess(command, 127, "", str(exc))
@@ -1673,7 +1677,7 @@ def cmd_machine_init(args: argparse.Namespace) -> int:
         if not owner or not shutil.which("gh"):
             print("remote creation requires ~/.boss/owner and an authenticated gh CLI", file=sys.stderr)
             return 2
-        created = run(["gh", "repo", "create", f"{owner}/{machine['name']}", "--private", "--source", str(repo), "--remote", "origin", "--push"], timeout=120)
+        created = run_github_command(["gh", "repo", "create", f"{owner}/{machine['name']}", "--private", "--source", str(repo), "--remote", "origin", "--push"])
         if created.returncode != 0:
             print("GitHub machine repository creation failed", file=sys.stderr)
             return 1
@@ -1696,12 +1700,29 @@ def push_machine(repo: Path) -> int:
     upstream = git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     branch = git(repo, "branch", "--show-current") or "main"
     command = ["git", "-C", str(repo), "push"] if upstream else ["git", "-C", str(repo), "push", "-u", "origin", branch]
-    result = run(command, timeout=60)
+    result = run_github_command(command, timeout=60)
     if result.returncode != 0:
         print("machine brain push failed; credentials or remote permissions need attention", file=sys.stderr)
         return 1
     print("machine brain pushed")
     return 0
+
+
+def run_github_command(command: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    """Run gh with a process-only askpass bridge when GH_TOKEN is supplied."""
+    token = os.environ.get("GH_TOKEN", "")
+    if not token:
+        return run(command, timeout=timeout)
+    fd, askpass_name = tempfile.mkstemp(prefix="boss-gh-askpass-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' x-access-token ;; *) printf '%s\\n' \"$GH_TOKEN\" ;; esac\n")
+        os.chmod(askpass_name, 0o700)
+        environment = {**os.environ, "GIT_ASKPASS": askpass_name, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS_REQUIRE": "force"}
+        return run(command, timeout=timeout, env=environment)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(askpass_name)
 
 
 def cmd_machine_sync(args: argparse.Namespace) -> int:
