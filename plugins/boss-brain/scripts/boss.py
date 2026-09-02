@@ -30,6 +30,7 @@ from typing import Any, Iterable
 VERSION = "0.1.0"
 SCHEMA_VERSION = 1
 POLICIES = ("quiet", "guarded", "strict")
+RECEIPT_POLICIES = ("off", "changes", "always")
 TOKEN_RE = re.compile(
     r"(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|"
     r"xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{30,}|"
@@ -99,6 +100,9 @@ def config() -> dict[str, Any]:
     policy = value.get("policy", "quiet")
     if policy not in POLICIES:
         policy = "quiet"
+    receipt = value.get("receipt", "changes")
+    if receipt not in RECEIPT_POLICIES:
+        receipt = "changes"
     scan = value.get("scan") if isinstance(value.get("scan"), dict) else {}
     scan = {"max_depth": 3, "max_age_days": 180, **scan}
     scan["max_depth"] = bounded_int(scan.get("max_depth"), 3, 0, 32)
@@ -107,6 +111,7 @@ def config() -> dict[str, Any]:
         **value,
         "schema": SCHEMA_VERSION,
         "policy": policy,
+        "receipt": receipt,
         "scan": scan,
     }
 
@@ -1013,6 +1018,25 @@ def session_file(session_id: str) -> Path:
     return state_home() / "sessions" / f"{safe}.json"
 
 
+def trace_file(session_id: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "nosid")
+    return state_home() / "traces" / f"{safe}.jsonl"
+
+
+def preview_file(session_id: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "nosid")
+    return state_home() / "previews" / f"{safe}.txt"
+
+
+def append_trace(session_id: str, entry: dict[str, Any]) -> None:
+    path = trace_file(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    safe = json.loads(redact_secrets(json.dumps(entry, ensure_ascii=False)))
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(safe, ensure_ascii=False) + "\n")
+    os.chmod(path, 0o600)
+
+
 def load_session(session_id: str) -> dict[str, Any]:
     return read_json(session_file(session_id), {"schema": SCHEMA_VERSION, "roots": {}, "last_injection": ""})
 
@@ -1074,6 +1098,27 @@ def context_sections(mode: str, text: str) -> list[str]:
     return [name for name, marker in checks if marker in text]
 
 
+def context_receipt(mode: str, project: str, task: str, drift: str, sections: list[str]) -> str:
+    policy = config()["receipt"]
+    changed = mode not in ("workspace", "roster")
+    if policy == "off" or (policy == "changes" and not changed):
+        return ""
+    if mode == "alias":
+        message = f"⚠ Boss：疑似涉及项目 {project}，未切换、未加载其正文"
+    elif mode == "task-drift":
+        message = f"⚠ Boss：疑似从任务 {task or '-'} 漂移到 {drift}，未切换"
+    elif mode == "goal-drift":
+        message = f"⚠ Boss：检测到自然语言目标漂移，当前目标保持不变"
+    else:
+        details = f" · {task}" if task else ""
+        injected = f" · 注入 {','.join(sections)}" if sections else ""
+        message = f"↳ Boss：{project or '项目索引'}{details}{injected}"
+    return (
+        "\n[Boss Brain 用户可见上下文回执要求]\n"
+        f"在本轮最终答复末尾原样附加这一行，不要展示路径或内部上下文：{message}"
+    )
+
+
 def remember_context(
     session_id: str,
     mode: str,
@@ -1083,12 +1128,27 @@ def remember_context(
     identity: str = "",
     task_id: str = "",
     drift_task: str = "",
-) -> None:
+    before_project: str = "",
+    evidence: list[str] | None = None,
+    before_task: str = "",
+    drift_goal: str = "",
+    match_score: float | None = None,
+) -> str:
     value = load_session(session_id)
     key = f"{mode}:{row['name'] if row else '-'}:{identity}"
     value["last_injection"] = key
     redacted = redact_secrets(text)
+    sections = context_sections(mode, redacted)
+    selected_project = row["name"] if row else None
+    candidate_project = selected_project if mode in ("alias", "explicit") else None
+    if mode == "alias":
+        selected_project = before_project or None
+    project_decision = "candidate-kept" if mode == "alias" else ("switched" if mode == "explicit" else "kept")
+    task_decision = "candidate-kept" if mode in ("task-drift", "goal-drift") else ("switched" if mode == "task" else "kept")
+    receipt = context_receipt(mode, row["name"] if row else "", task_id, drift_task, sections)
     value["last_context"] = {
+        "schema": 2,
+        "session": session_id,
         "at": now_iso(),
         "event": event,
         "mode": mode,
@@ -1106,12 +1166,73 @@ def remember_context(
         "project": row["name"] if row else None,
         "task": task_id or None,
         "drift_task": drift_task or None,
+        "project_transition": {
+            "before": before_project or selected_project,
+            "candidate": candidate_project,
+            "selected": selected_project,
+            "decision": project_decision,
+            "reason": {"alias": "low-confidence", "explicit": "explicit-project", "workspace": "working-directory"}.get(mode, "context-match"),
+            "evidence": evidence or [],
+        },
+        "task_transition": {
+            "before": before_task or task_id or None,
+            "candidate": drift_task or (task_id if mode == "task" else None),
+            "selected": task_id or None,
+            "decision": task_decision,
+            "reason": "explicit-confirmation-required" if task_decision == "candidate-kept" else "context-match",
+            "evidence": evidence or [],
+        },
+        "goal_transition": {
+            "candidate": drift_goal or None,
+            "decision": "candidate-kept" if drift_goal else "none",
+            "reason": "explicit-confirmation-required" if drift_goal else None,
+            "score": match_score,
+            "evidence": evidence or [],
+        },
+        "injection": {"performed": True, "suppressed": False, "reason": None},
         "chars": len(redacted),
-        "sections": context_sections(mode, redacted),
+        "sections": sections,
+        "receipt": {"policy": config()["receipt"], "required": bool(receipt)},
     }
+    value["last_context_with_receipt"] = redacted.rstrip() + receipt
     save_session(session_id, value)
+    append_trace(session_id, value["last_context"])
     write_json(state_home() / "last-context.json", value["last_context"])
     atomic_write(state_home() / "last-context-preview.txt", redacted.rstrip() + "\n", 0o600)
+    atomic_write(preview_file(session_id), redacted.rstrip() + "\n", 0o600)
+    return redacted.rstrip() + receipt
+
+
+def remember_suppression(session_id: str, reason: str, project: str = "", task: str = "") -> None:
+    entry = {
+        "schema": 2,
+        "session": session_id,
+        "at": now_iso(),
+        "event": "UserPromptSubmit",
+        "mode": "none",
+        "confidence": "none",
+        "content_policy": "none",
+        "project": project or None,
+        "task": task or None,
+        "drift_task": None,
+        "project_transition": {
+            "before": project or None, "candidate": None, "selected": project or None,
+            "decision": "kept", "reason": reason, "evidence": [],
+        },
+        "task_transition": {
+            "before": task or None, "candidate": None, "selected": task or None,
+            "decision": "kept", "reason": reason, "evidence": [],
+        },
+        "injection": {"performed": False, "suppressed": True, "reason": reason},
+        "chars": 0,
+        "sections": [],
+        "receipt": {"policy": config()["receipt"], "required": False},
+    }
+    value = load_session(session_id)
+    value["last_context"] = entry
+    save_session(session_id, value)
+    append_trace(session_id, entry)
+    write_json(state_home() / "last-context.json", entry)
 
 
 def roster_context(rows: list[dict[str, str]]) -> str:
@@ -1169,7 +1290,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             names = ", ".join(row["name"] for row in added)
             text += f"\nBoss 本轮静默登记了项目：{names}。不要为补元数据打断用户当前任务。"
         ensure_machine_initialized()
-        remember_context(session_id, "workspace", match, text, "SessionStart", task_id=task_id)
+        text = remember_context(session_id, "workspace", match, text, "SessionStart", task_id=task_id)
         hook_output("SessionStart", text)
         return 0
     if rows:
@@ -1178,7 +1299,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             names = ", ".join(row["name"] for row in added)
             text += f"\n本轮巡航静默登记：{names}。不要主动要求用户补资料。"
         ensure_machine_initialized()
-        remember_context(session_id, "roster", None, text, "SessionStart")
+        text = remember_context(session_id, "roster", None, text, "SessionStart")
         hook_output("SessionStart", text)
     else:
         ensure_machine_initialized()
@@ -1192,6 +1313,7 @@ def hook_prompt(payload: dict[str, Any]) -> int:
     session_id = str(payload.get("session_id") or "nosid")
     rows = read_registry()
     if not rows:
+        remember_suppression(session_id, "no-project-registry")
         return 0
     session = load_session(session_id)
     explicit = explicit_project(prompt, rows)
@@ -1199,6 +1321,8 @@ def hook_prompt(payload: dict[str, Any]) -> int:
     identity = ""
     task_id = ""
     drift_task = ""
+    drift_goal = ""
+    match_score: float | None = None
     claimed = session.get("roots", {})
     current = next(
         (item for item in rows if str(Path(item["path"]).resolve()) in claimed),
@@ -1212,6 +1336,7 @@ def hook_prompt(payload: dict[str, Any]) -> int:
         target = explicit or current
         task = task_for_id(Path(target["path"]) / ".brain", task_token) if target else None
         if not target or not task or not task["active"]:
+            remember_suppression(session_id, "invalid-or-completed-task", current["name"] if current else "", current_task)
             return 0
         root = Path(target["path"])
         if root.is_dir():
@@ -1241,6 +1366,7 @@ def hook_prompt(payload: dict[str, Any]) -> int:
             else:
                 mode, row, text = "explicit", explicit, project_context(explicit)
         else:
+            remember_suppression(session_id, "current-task-unchanged", current["name"], current_task)
             return 0
     elif current and current_goal and not explicit and not task_token:
         goals = legacy_task_goals(Path(current["path"]) / ".brain")
@@ -1251,9 +1377,11 @@ def hook_prompt(payload: dict[str, Any]) -> int:
         best_score, best_tokens = matches[0][0] if matches else (0.0, [])
         next_score = matches[1][0][0] if len(matches) > 1 else 0.0
         if matches and best_score >= 0.45 and best_score - next_score >= 0.1:
-            text = goal_drift_context(current, current_goal, matches[0][1], best_score, best_tokens)
-            mode, row, identity = "goal-drift", current, f"{current_goal}->{matches[0][1]}:{best_score:.3f}"
+            drift_goal, match_score = matches[0][1], best_score
+            text = goal_drift_context(current, current_goal, drift_goal, best_score, best_tokens)
+            mode, row, identity = "goal-drift", current, f"{current_goal}->{drift_goal}:{best_score:.3f}"
         else:
+            remember_suppression(session_id, "ambiguous-or-low-confidence-goal", current["name"], current_task)
             return 0
     elif explicit:
         root = Path(explicit["path"])
@@ -1285,15 +1413,22 @@ def hook_prompt(payload: dict[str, Any]) -> int:
                 )
             guidance = relevant_guidance_context(target, prompt) if target else None
             if not guidance:
+                remember_suppression(session_id, "no-context-match", current["name"] if current else "", current_task)
                 return 0
             text, mode, identity = guidance
             row = target
     else:
+        remember_suppression(session_id, "unrecognized-explicit-reference", current["name"] if current else "", current_task)
         return 0
     key = f"{mode}:{row['name'] if row else '-'}:{identity}"
     if session.get("last_injection") == key:
+        remember_suppression(session_id, "duplicate-suppressed", current["name"] if current else "", current_task)
         return 0
-    remember_context(session_id, mode, row, text, "UserPromptSubmit", identity, task_id, drift_task)
+    evidence = best_tokens if mode == "goal-drift" else []
+    text = remember_context(
+        session_id, mode, row, text, "UserPromptSubmit", identity, task_id, drift_task,
+        current["name"] if current else "", evidence, current_task, drift_goal, match_score,
+    )
     hook_output("UserPromptSubmit", text)
     return 0
 
@@ -2026,8 +2161,33 @@ def cmd_policy(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_receipt(args: argparse.Namespace) -> int:
+    cfg = config()
+    if args.value:
+        cfg["receipt"] = args.value
+        write_json(runtime_home() / "config.json", cfg)
+    print(cfg["receipt"])
+    return 0
+
+
 def cmd_explain(args: argparse.Namespace) -> int:
-    value = read_json(state_home() / "last-context.json", {})
+    session_id = args.session or ""
+    value = load_session(session_id).get("last_context", {}) if session_id else read_json(state_home() / "last-context.json", {})
+    if args.history:
+        if not session_id:
+            print("--history requires --session", file=sys.stderr)
+            return 2
+        try:
+            entries = [json.loads(line) for line in trace_file(session_id).read_text(encoding="utf-8").splitlines() if line.strip()]
+        except (OSError, json.JSONDecodeError):
+            entries = []
+        if args.json:
+            print(json.dumps(entries, ensure_ascii=False, indent=2))
+        else:
+            for entry in entries[-20:]:
+                injection = entry.get("injection", {})
+                print(f"{entry.get('at', '-')} {entry.get('mode', '-')} project={entry.get('project') or '-'} task={entry.get('task') or '-'} injected={injection.get('performed', False)} reason={injection.get('reason') or '-'}")
+        return 0
     if args.json:
         print(json.dumps(value, ensure_ascii=False, indent=2))
         return 0
@@ -2041,11 +2201,15 @@ def cmd_explain(args: argparse.Namespace) -> int:
     if value.get("drift_task"):
         print(f"DRIFT    {value['drift_task']}")
     print(f"CONTENT  {value.get('content_policy') or '-'}")
+    project_transition = value.get("project_transition") or {}
+    task_transition = value.get("task_transition") or {}
+    print(f"PROJECTΔ {project_transition.get('before') or '-'} -> {project_transition.get('candidate') or '-'} -> {project_transition.get('selected') or '-'} ({project_transition.get('reason') or '-'})")
+    print(f"TASKΔ    {task_transition.get('before') or '-'} -> {task_transition.get('candidate') or '-'} -> {task_transition.get('selected') or '-'} ({task_transition.get('reason') or '-'})")
     print(f"SECTIONS {', '.join(value.get('sections') or []) or '-'}")
     print(f"CHARS    {value.get('chars') or 0}")
     print(f"AT       {value.get('at') or '-'}")
     if args.show:
-        preview = state_home() / "last-context-preview.txt"
+        preview = preview_file(session_id) if session_id else state_home() / "last-context-preview.txt"
         print("--- redacted context preview ---")
         try:
             print(preview.read_text(encoding="utf-8"), end="")
@@ -2123,6 +2287,8 @@ def parser() -> argparse.ArgumentParser:
     explain_output = explain.add_mutually_exclusive_group()
     explain_output.add_argument("--json", action="store_true")
     explain_output.add_argument("--show", action="store_true")
+    explain.add_argument("--session")
+    explain.add_argument("--history", action="store_true")
     explain.set_defaults(func=cmd_explain)
     for name in ("wiki", "conventions"):
         group = subs.add_parser(name)
@@ -2179,6 +2345,9 @@ def parser() -> argparse.ArgumentParser:
     policy = subs.add_parser("policy")
     policy.add_argument("value", nargs="?", choices=POLICIES)
     policy.set_defaults(func=cmd_policy)
+    receipt = subs.add_parser("receipt")
+    receipt.add_argument("value", nargs="?", choices=RECEIPT_POLICIES)
+    receipt.set_defaults(func=cmd_receipt)
     doctor = subs.add_parser("doctor")
     doctor.add_argument("--json", action="store_true")
     doctor.set_defaults(func=cmd_doctor)

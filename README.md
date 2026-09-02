@@ -43,6 +43,8 @@ boss caps
 boss risk
 boss explain
 boss explain --show
+boss explain --session SESSION_ID --history
+boss receipt changes
 boss wiki check
 boss conventions check
 boss handoff check --run

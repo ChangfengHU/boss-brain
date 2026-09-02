@@ -336,8 +336,10 @@ class UserJourneyTest(unittest.TestCase):
         )
         self.assertEqual(repeated_name.stdout, "")
         trace = json.loads(self.boss("explain", "--json").stdout)
-        self.assertEqual(trace["mode"], "workspace")
-        self.assertEqual(trace["content_policy"], "full-project")
+        self.assertEqual(trace["mode"], "none")
+        self.assertEqual(trace["injection"]["reason"], "no-context-match")
+        history = json.loads(self.boss("explain", "--session", "wiki-scope", "--history", "--json").stdout)
+        self.assertEqual(history[0]["mode"], "workspace")
 
         selected = self.boss(
             "hook",
@@ -576,6 +578,52 @@ class UserJourneyTest(unittest.TestCase):
         trace = json.loads(self.boss("explain", "--json").stdout)
         self.assertEqual(trace["mode"], "goal-drift")
         self.assertEqual(trace["content_policy"], "pointer-only")
+        self.assertEqual(trace["goal_transition"]["candidate"], "migrate worker deployment")
+        self.assertGreaterEqual(trace["goal_transition"]["score"], 0.45)
+        self.assertTrue(trace["goal_transition"]["evidence"])
+
+    def test_context_receipts_and_session_traces_make_routing_changes_visible(self) -> None:
+        alpha = make_repo(self.home / "work" / "receipt-alpha", "RECEIPT_ALPHA")
+        beta = make_repo(self.home / "work" / "receipt-beta", "RECEIPT_BETA")
+        self.assertEqual(self.boss("adopt", str(alpha), "--aliases", "alpha-receipt").returncode, 0)
+        self.assertEqual(self.boss("adopt", str(beta), "--aliases", "beta-receipt").returncode, 0)
+
+        started = self.boss(
+            "hook", "session-start",
+            payload={"session_id": "receipt-a", "cwd": str(alpha), "source": "startup"},
+        )
+        self.assertNotIn("用户可见上下文回执要求", started.stdout)
+        drift = self.boss(
+            "hook", "prompt-submit",
+            payload={"session_id": "receipt-a", "prompt": "beta-receipt 现在怎么样"},
+        )
+        self.assertIn("用户可见上下文回执要求", drift.stdout)
+        self.assertIn("未切换、未加载其正文", drift.stdout)
+        trace = json.loads(self.boss("explain", "--session", "receipt-a", "--json").stdout)
+        self.assertEqual(trace["project_transition"]["before"], "receipt-alpha")
+        self.assertEqual(trace["project_transition"]["candidate"], "receipt-beta")
+        self.assertEqual(trace["project_transition"]["selected"], "receipt-alpha")
+
+        self.boss(
+            "hook", "session-start",
+            payload={"session_id": "receipt-b", "cwd": str(beta), "source": "startup"},
+        )
+        self.boss(
+            "hook", "prompt-submit",
+            payload={"session_id": "receipt-b", "prompt": "ordinary unrelated question"},
+        )
+        history_a = json.loads(self.boss("explain", "--session", "receipt-a", "--history", "--json").stdout)
+        history_b = json.loads(self.boss("explain", "--session", "receipt-b", "--history", "--json").stdout)
+        self.assertTrue(all(item["session"] == "receipt-a" for item in history_a))
+        self.assertTrue(all(item["session"] == "receipt-b" for item in history_b))
+        self.assertEqual(history_b[-1]["injection"]["reason"], "no-context-match")
+
+        self.assertEqual(self.boss("receipt", "off").stdout.strip(), "off")
+        explicit = self.boss(
+            "hook", "prompt-submit",
+            payload={"session_id": "receipt-a", "prompt": "查看 @receipt-beta"},
+        )
+        self.assertNotIn("用户可见上下文回执要求", explicit.stdout)
 
     def test_git_worktree_uses_the_checked_out_worktree_context(self) -> None:
         source = make_repo(self.home / "work" / "source", "SOURCE_READY")

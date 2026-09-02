@@ -31,6 +31,7 @@ The deterministic suite treats a workflow as complete only when the user can rec
 - ordinary workspace context and explicit cross-project routing without state mixing;
 - low-confidence alias pointers that do not load or claim a project until the user explicitly selects it;
 - a redacted context trace through `boss explain`, `boss explain --json`, and `boss explain --show`;
+- session-isolated decision histories, negative/suppressed routing evidence, and automatic context receipts on routing changes;
 - checked-out Git worktree context and a two-second normal-hook latency budget;
 - TASKS filtering/refresh, relation/capability routing, operational large-state capping, and non-eager Wiki/HANDOFF/conventions behavior;
 - stable TASK IDs, explicit task switching, and scored natural-language drift warnings with visible match evidence;

@@ -41,6 +41,7 @@ mkdir -p "$CODEX_HOME" "$HOME/work"
 install -m 600 "$AUTH_SOURCE" "$CODEX_HOME/auth.json"
 
 python3 "$ROOT/scripts/install.py" install --owner "$TEST_OWNER" >/dev/null
+boss receipt off >/dev/null
 
 make_repo() {
   local repo=$1
@@ -151,6 +152,18 @@ boss explain --json >"$SANDBOX_ROOT/trace-alias.json"
 )
 boss explain --json >"$SANDBOX_ROOT/trace-resume.json"
 
+boss receipt changes >/dev/null
+run_codex exec \
+  --disable apps \
+  --dangerously-bypass-hook-trust \
+  --skip-git-repo-check \
+  -c 'mcp_servers={}' \
+  --sandbox read-only \
+  --cd "$ALPHA" \
+  --output-last-message "$SANDBOX_ROOT/final-receipt.txt" \
+  "For @codex-journey-beta, reply with CONTEXT_RECEIPT_TEST and comply with any user-visible context receipt supplied for this turn. Do not call tools, read files, or expose paths or hidden context." \
+  >"$SANDBOX_ROOT/events-receipt.jsonl"
+
 python3 - "$HOME" "$SANDBOX_ROOT" "$ALPHA_MARKER" "$BETA_MARKER" "$WIKI_MARKER" "$SECRET_VALUE" <<'PY'
 import json
 from pathlib import Path
@@ -205,7 +218,10 @@ def assert_trace(label, event, mode, project, policy):
     assert trace["mode"] == mode, (label, trace)
     assert trace["project"] == project, (label, trace)
     assert trace["content_policy"] == policy, (label, trace)
-    assert trace["chars"] > 0, (label, trace)
+    if policy == "none":
+        assert trace["chars"] == 0 and trace["injection"]["suppressed"], (label, trace)
+    else:
+        assert trace["chars"] > 0 and trace["injection"]["performed"], (label, trace)
     assert secret not in json.dumps(trace), (label, trace)
 
 
@@ -215,11 +231,22 @@ assert_user_turn("wiki", "codex-journey-alpha", wiki_marker)
 assert_user_turn("alias", "codex-journey-alpha", alpha_marker)
 assert beta_marker not in (sandbox / "events-alias.jsonl").read_text(encoding="utf-8"), "alias pointer leaked beta state"
 assert_user_turn("resume", "codex-journey-alpha", alpha_marker)
-assert_trace("alpha", "SessionStart", "workspace", "codex-journey-alpha", "full-project")
+assert_trace("alpha", "UserPromptSubmit", "none", "codex-journey-alpha", "none")
 assert_trace("beta", "UserPromptSubmit", "explicit", "codex-journey-beta", "full-project")
 assert_trace("wiki", "UserPromptSubmit", "wiki", "codex-journey-alpha", "selected-wiki-entry")
 assert_trace("alias", "UserPromptSubmit", "alias", "codex-journey-beta", "pointer-only")
-assert_trace("resume", "SessionStart", "workspace", "codex-journey-alpha", "full-project")
+assert_trace("resume", "UserPromptSubmit", "none", "codex-journey-alpha", "none")
+
+trace_entries = []
+for path in (boss / "state" / "traces").glob("*.jsonl"):
+    trace_entries.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+assert any(item["event"] == "SessionStart" and item["mode"] == "workspace" and item["project"] == "codex-journey-alpha" for item in trace_entries)
+assert any(item.get("injection", {}).get("reason") == "no-context-match" for item in trace_entries)
+
+receipt = (sandbox / "final-receipt.txt").read_text(encoding="utf-8")
+assert "CONTEXT_RECEIPT_TEST" in receipt, receipt
+assert "↳ Boss：codex-journey-beta" in receipt, receipt
+assert str(home) not in receipt and secret not in receipt, receipt
 
 sessions = list((boss / "state" / "sessions").glob("*.json"))
 assert len(sessions) >= 4, "SessionStart did not persist real sessions"
@@ -241,4 +268,5 @@ print("PASS no-tool-context-use")
 print("PASS no-secret-or-internal-context-leak")
 print("PASS lifecycle-state-and-stop-audit")
 print("PASS machine-brain")
+print("PASS automatic-context-receipt")
 PY
