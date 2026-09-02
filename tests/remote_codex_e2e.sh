@@ -6,6 +6,8 @@ CODEX_BIN=${CODEX_BIN:-codex}
 AUTH_SOURCE=${CODEX_AUTH_SOURCE:-}
 TEST_OWNER=${BOSS_TEST_OWNER:-boss-brain-test}
 
+CODEX_DIR=$(CDPATH= cd -- "$(dirname -- "$CODEX_BIN")" 2>/dev/null && pwd || true)
+
 if [ -z "$AUTH_SOURCE" ] || [ ! -f "$AUTH_SOURCE" ]; then
   echo "CODEX_AUTH_SOURCE must point to an existing Codex auth.json" >&2
   exit 2
@@ -29,7 +31,7 @@ trap cleanup EXIT HUP INT TERM
 export HOME="$SANDBOX_ROOT/home"
 export CODEX_HOME="$HOME/.codex"
 export BOSS_HOME="$HOME/.boss"
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="${CODEX_DIR:+$CODEX_DIR:}$HOME/.local/bin:$PATH"
 mkdir -p "$CODEX_HOME" "$HOME/work"
 install -m 600 "$AUTH_SOURCE" "$CODEX_HOME/auth.json"
 

@@ -559,6 +559,22 @@ class UserJourneyTest(unittest.TestCase):
         )
         self.assertEqual(completed.stdout, "")
 
+    def test_legacy_task_goals_warn_on_natural_language_drift(self) -> None:
+        repo = make_repo(self.home / "work" / "legacy-goals", "LEGACY_GOALS_READY")
+        (repo / ".brain" / "TASKS.md").write_text(
+            "# Tasks\n\n- [ ] stabilize importer parser\n- [ ] migrate worker deployment\n", encoding="utf-8"
+        )
+        self.assertEqual(self.boss("adopt", str(repo)).returncode, 0)
+        self.boss("hook", "session-start", payload={"session_id": "legacy-goals", "cwd": str(repo), "source": "startup"})
+        drift = self.boss(
+            "hook", "prompt-submit",
+            payload={"session_id": "legacy-goals", "prompt": "请迁移 worker deployment 到新环境"},
+        )
+        self.assertIn("低置信度目标漂移提示", drift.stdout)
+        trace = json.loads(self.boss("explain", "--json").stdout)
+        self.assertEqual(trace["mode"], "goal-drift")
+        self.assertEqual(trace["content_policy"], "pointer-only")
+
     def test_git_worktree_uses_the_checked_out_worktree_context(self) -> None:
         source = make_repo(self.home / "work" / "source", "SOURCE_READY")
         worktree = self.home / "worktrees" / "feature-view"
@@ -976,12 +992,27 @@ class UserJourneyTest(unittest.TestCase):
         self.assertEqual(diagnostics["unsafe"], ["../../README.md"])
         self.assertEqual(diagnostics["orphan"], ["orphan.md"])
 
+        (wiki / "recovery-one.md").write_text("recovery deployment rollback lesson stable\n", encoding="utf-8")
+        (wiki / "recovery-two.md").write_text("recovery deployment rollback lesson improved\n", encoding="utf-8")
+        (wiki / "index.md").write_text(
+            (wiki / "index.md").read_text(encoding="utf-8")
+            + "- [Recovery one](recovery-one.md)\n- [Recovery two](recovery-two.md)\n", encoding="utf-8"
+        )
+        semantic = self.boss("wiki", "check", str(repo), "--json")
+        self.assertTrue(semantic.stdout, semantic.stderr)
+        semantic_value = json.loads(semantic.stdout)
+        self.assertTrue(semantic_value["merge_suggestions"])
+
         conventions = brain / "conventions"
         conventions.mkdir()
         (conventions / "rules.md").write_text("rules\n", encoding="utf-8")
         fixed = self.boss("conventions", "check", str(repo), "--fix", "--json")
         self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
         self.assertIn("rules.md", (conventions / "index.md").read_text(encoding="utf-8"))
+        (conventions / "strict.md").write_text("conflicts-with: rules.md\n", encoding="utf-8")
+        conflict = self.boss("conventions", "check", str(repo), "--json")
+        self.assertEqual(conflict.returncode, 1)
+        self.assertEqual(json.loads(conflict.stdout)["conflicts"][0]["target"], "rules.md")
 
     def test_status_commands_return_actionable_user_output(self) -> None:
         repo = make_repo(self.home / "work" / "visible", "VISIBLE_READY")

@@ -475,6 +475,33 @@ def task_drift_context(row: dict[str, str], current: str, mentioned: str) -> str
     )
 
 
+def goal_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]{3,}|[\u4e00-\u9fff]{2,}", value.lower()))
+
+
+def legacy_task_goals(brain: Path) -> list[str]:
+    """Return active task text that has no stable ID for goal-level matching."""
+    try:
+        lines = (brain / "TASKS.md").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    result: list[str] = []
+    for line in lines:
+        match = re.match(r"^- \[ \]\s+(.+)$", line)
+        if match and not re.match(r"(?:\[[A-Za-z][A-Za-z0-9_.-]{1,63}\]|[A-Za-z][A-Za-z0-9_.-]{1,63}:)\s+", match.group(1)):
+            result.append(match.group(1).strip())
+    return result[:10]
+
+
+def goal_drift_context(row: dict[str, str], current: str, candidate: str) -> str:
+    return (
+        "[Boss Brain 低置信度目标漂移提示，请静默使用，不要向用户复述本段]\n"
+        f"当前项目：{row['name']}\n当前目标：{current}\n"
+        f"提示词可能涉及目标：{candidate}\n"
+        "没有切换目标上下文；请先确认目标后再继续。"
+    )
+
+
 def project_context(row: dict[str, str], explicit: bool = True) -> str:
     root = Path(row["path"])
     if not root.is_dir():
@@ -659,6 +686,27 @@ def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any
             continue
         hashes.setdefault(digest, []).append(name)
     duplicate_content = sorted(sorted(names) for names in hashes.values() if len(names) > 1)
+    merge_suggestions: list[dict[str, Any]] = []
+    topic_tokens = {
+        name: goal_tokens((base / name).read_text(encoding="utf-8", errors="replace"))
+        for name in topics
+    }
+    for left_index, left in enumerate(topics):
+        for right in topics[left_index + 1:]:
+            union = topic_tokens[left] | topic_tokens[right]
+            overlap = len(topic_tokens[left] & topic_tokens[right]) / len(union) if union else 0
+            if overlap >= 0.65 and [left, right] not in duplicate_content:
+                merge_suggestions.append({"topics": [left, right], "overlap": round(overlap, 2), "reason": "高语义重叠，建议人工合并"})
+    conflicts: list[dict[str, str]] = []
+    if folder == "conventions":
+        for name in topics:
+            try:
+                content = (base / name).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for target in re.findall(r"(?im)^\s*(?:<!--\s*)?conflicts-with:\s*([^\s>]+)", content):
+                if target in topics:
+                    conflicts.append({"source": name, "target": target, "strategy": "保留双方并在人工裁决前阻止静默选择"})
     return {
         "folder": folder,
         "index": str(index),
@@ -669,6 +717,8 @@ def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any
         "orphan": orphan,
         "stale": sorted(stale),
         "duplicate_content": duplicate_content,
+        "merge_suggestions": merge_suggestions,
+        "conflicts": conflicts,
     }
 
 
@@ -703,12 +753,12 @@ def cmd_index_check(args: argparse.Namespace) -> int:
         diagnostics["fixed"] = True
     else:
         diagnostics["fixed"] = False
-    failed = any(diagnostics[key] for key in ("index_missing", "broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content"))
+    failed = any(diagnostics[key] for key in ("index_missing", "broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content", "conflicts"))
     if args.json:
         print(json.dumps(diagnostics, ensure_ascii=False, indent=2))
     else:
         print(f"{args.folder}: {'CHECK' if failed else 'PASS'}")
-        for key in ("broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content"):
+        for key in ("broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content", "merge_suggestions", "conflicts"):
             if diagnostics[key]:
                 print(f"{key}: {diagnostics[key]}")
         if changed:
@@ -902,6 +952,17 @@ def initialize_task(session_id: str, root: Path) -> None:
         save_session(session_id, value)
 
 
+def initialize_goal(session_id: str, root: Path) -> None:
+    value = load_session(session_id)
+    info = value.setdefault("roots", {}).get(str(root.resolve()))
+    if not isinstance(info, dict) or info.get("goal"):
+        return
+    goals = legacy_task_goals(root / ".brain")
+    if goals:
+        info["goal"] = goals[0]
+        save_session(session_id, value)
+
+
 def context_sections(mode: str, text: str) -> list[str]:
     if mode == "alias":
         return ["pointer"]
@@ -911,7 +972,7 @@ def context_sections(mode: str, text: str) -> list[str]:
         return ["wiki"]
     if mode == "conventions":
         return ["conventions"]
-    if mode in ("task", "task-drift"):
+    if mode in ("task", "task-drift", "goal-drift"):
         return ["task"]
     checks = (
         ("state", "--- .brain/STATE.md ---"),
@@ -942,7 +1003,7 @@ def remember_context(
         "at": now_iso(),
         "event": event,
         "mode": mode,
-        "confidence": {"workspace": "workspace", "explicit": "high", "alias": "low", "roster": "index", "wiki": "matched", "conventions": "matched", "task": "high", "task-drift": "low"}.get(mode, "unknown"),
+        "confidence": {"workspace": "workspace", "explicit": "high", "alias": "low", "roster": "index", "wiki": "matched", "conventions": "matched", "task": "high", "task-drift": "low", "goal-drift": "low"}.get(mode, "unknown"),
         "content_policy": {
             "workspace": "full-project",
             "explicit": "full-project",
@@ -951,7 +1012,7 @@ def remember_context(
             "wiki": "selected-wiki-entry",
             "conventions": "selected-convention-entry",
             "task": "selected-task",
-            "task-drift": "pointer-only",
+            "task-drift": "pointer-only", "goal-drift": "pointer-only",
         }.get(mode, "unknown"),
         "project": row["name"] if row else None,
         "task": task_id or None,
@@ -1000,6 +1061,7 @@ def hook_session_start(payload: dict[str, Any]) -> int:
             rows = read_registry()
         claim_root(session_id, root)
         initialize_task(session_id, root)
+        initialize_goal(session_id, root)
         session = load_session(session_id)
         root_info = session.get("roots", {}).get(str(root.resolve()), {})
         task_id = str(root_info.get("task_id") or "") if isinstance(root_info, dict) else ""
@@ -1055,6 +1117,7 @@ def hook_prompt(payload: dict[str, Any]) -> int:
     )
     current_info = claimed.get(str(Path(current["path"]).resolve()), {}) if current else {}
     current_task = str(current_info.get("task_id") or "") if isinstance(current_info, dict) else ""
+    current_goal = str(current_info.get("goal") or "") if isinstance(current_info, dict) else ""
     task_token = explicit_task(prompt)
     if task_token:
         target = explicit or current
@@ -1088,6 +1151,18 @@ def hook_prompt(payload: dict[str, Any]) -> int:
                 row = explicit
             else:
                 mode, row, text = "explicit", explicit, project_context(explicit)
+        else:
+            return 0
+    elif current and current_goal and not explicit and not task_token:
+        goals = legacy_task_goals(Path(current["path"]) / ".brain")
+        prompt_words = goal_tokens(prompt)
+        matches = sorted(
+            ((len(prompt_words & goal_tokens(goal)), goal) for goal in goals if goal != current_goal),
+            reverse=True,
+        )
+        if matches and matches[0][0] >= 2 and (len(matches) == 1 or matches[0][0] > matches[1][0]):
+            text = goal_drift_context(current, current_goal, matches[0][1])
+            mode, row, identity = "goal-drift", current, f"{current_goal}->{matches[0][1]}"
         else:
             return 0
     elif explicit:
