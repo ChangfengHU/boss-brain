@@ -1718,7 +1718,15 @@ def run_github_command(command: list[str], timeout: int = 120) -> subprocess.Com
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write("#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' x-access-token ;; *) printf '%s\\n' \"$GH_TOKEN\" ;; esac\n")
         os.chmod(askpass_name, 0o700)
-        environment = {**os.environ, "GIT_ASKPASS": askpass_name, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS_REQUIRE": "force"}
+        environment = {
+            **os.environ,
+            "GIT_ASKPASS": askpass_name,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS_REQUIRE": "force",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "credential.helper",
+            "GIT_CONFIG_VALUE_0": "!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f",
+        }
         return run(command, timeout=timeout, env=environment)
     finally:
         with contextlib.suppress(FileNotFoundError):
