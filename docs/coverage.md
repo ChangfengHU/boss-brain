@@ -17,12 +17,12 @@ Passing test counts are not a product-completeness claim. A capability is called
 | `STATE.md` injection and large-card capping | Verified | workspace and large-state tests | Invalid encodings are replacement-decoded, not rejected |
 | `TASKS.md` active checkbox and legacy `active` parsing | Verified | current/complete/limit/refresh and legacy tests | There is no task state machine or task ID integrity yet |
 | Cross-project relations and capability peers | Verified | relations/capability injection test | Interface availability is not actively probed |
-| Wiki index routing and selective topic injection | Verified locally and with real Codex | startup/body separation, multi-topic dedupe, cross-project scoping, path containment, and remote unique-marker answer without tools | Matching remains index-title/token based; semantic overlap now reports merge suggestions, but consolidation is still human-reviewed |
-| Wiki index maintenance, path safety, duplicate/orphan/stale checks | Verified locally | `boss wiki check` diagnostics and `--fix` journey; semantic overlap suggestions | Automatic consolidation and lesson merging remain unimplemented |
+| Wiki index routing and selective topic injection | Verified locally and with real Codex | startup/body separation, multi-topic dedupe, cross-project scoping, path containment, and remote unique-marker answer without tools | Matching remains index-title/token based; consolidation is still human-reviewed |
+| Wiki index maintenance, path safety, duplicate/orphan/stale checks | Verified locally | `boss wiki check` diagnostics and `--fix` journey; inverted-index semantic candidates with high-frequency fan-out protection | Candidate generation avoids normal all-pairs scans, but automatic consolidation and lesson merging remain unimplemented |
 | HANDOFF and HANDOFF_ACCEPTANCE workflows | Verified locally | `boss handoff check` static contract plus safe command execution journey | Interactive takeover remains skill-driven |
-| Conventions selection and index checks | Verified locally | prompt-matched convention injection and `boss conventions check` journey | Explicit `conflicts-with:` diagnostics block a clean check and require human resolution; no automatic global policy resolver |
+| Conventions selection and index checks | Verified locally | prompt-matched injection; unresolved conflict blocking; deterministic `supersedes`, scope, and priority resolution | Same-scope/same-priority conflicts intentionally require human resolution |
 | Stable task-ID drift detection | Verified locally | task ID selection, natural-mention warning, explicit `@task:ID` switch, completed-task rejection, and explain trace | Free-form goal drift without a stable task ID remains outside the model |
-| Free-form goal-level drift detection | Verified locally | legacy no-ID active goals, natural-language overlap warning, and pointer-only explain trace | Goal selection is conservative and session-local; it does not infer or rewrite task IDs |
+| Free-form goal-level drift detection | Verified locally | legacy no-ID active goals, bilingual n-grams/synonym normalization, scored warning evidence, and pointer-only explain trace | This is explainable lexical semantics, not an embedding/LLM classifier; it does not infer or rewrite task IDs |
 | Project-target drift prevention | Partial | alias pointer does not claim or load; explicit target does | Concurrent multi-agent task ownership is not modeled |
 | Evidence must reference latest work commit | Verified | strict and stale-evidence tests | Evidence command/result schema is not fully validated |
 | Wiki judgment required in evidence | Verified as a field gate | strict missing-then-present judgment test | Judgment truthfulness cannot be inferred automatically |
@@ -30,11 +30,11 @@ Passing test counts are not a product-completeness claim. A capability is called
 | Uncommitted Brain records block guarded/strict completion | Verified | dirty-Brain test | Files outside `.brain/` remain normal Git responsibility |
 | quiet / guarded / strict policy behavior | Verified | policy and user-recovery tests | Real interactive Stop remediation remains model-dependent |
 | Machine Brain initialization and stable sync | Verified | machine snapshot tests | Real timer longevity |
-| Successful Machine Brain push | Verified with local Git remote | machine push/restore journey | Real GitHub authentication and permissions |
+| Successful Machine Brain push | Verified locally and by GitHub canary | machine push/restore journey; Vault-backed create/push/delete canary | Token rotation and least-privilege policy remain operational responsibilities |
 | Missing/deleted project detection and clone recovery | Verified with local Git remote | explicit delete, MISSING status, restore, idempotency test | Uncommitted files are unrecoverable by design |
 | Corrupt inventory and unavailable project remote | Verified | corrupt/unavailable restore test | Interrupted partial clone and disk-full faults |
 | Clean replacement-machine restore | Verified in isolated HOME | clean-machine restore journey | Real reclaimed host with Vault bootstrap |
-| GitHub repository creation command path | Verified with fake CLI | machine init fake-`gh` contract test | Real GitHub account/repository creation remains an external canary |
+| GitHub repository creation command path | Verified locally and by GitHub canary | fake-`gh` contract plus real create/push/delete canary; process-only askpass and no repository credential persistence | Canary must be repeated after credential or GitHub policy changes |
 | systemd timer generation and enable failure | Partial | interval and fake-controller tests | Multi-day live timer/push canary |
 | Vault reference containment | Verified for accepted/rejected shapes | Vault and snapshot security tests | Real Vault outage behavior |
 | Install/update/uninstall/rollback preservation | Verified in isolated HOME | installer and rollback tests | Interactive existing-plugin trust UX |

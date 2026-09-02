@@ -33,8 +33,8 @@ The deterministic suite treats a workflow as complete only when the user can rec
 - a redacted context trace through `boss explain`, `boss explain --json`, and `boss explain --show`;
 - checked-out Git worktree context and a two-second normal-hook latency budget;
 - TASKS filtering/refresh, relation/capability routing, operational large-state capping, and non-eager Wiki/HANDOFF/conventions behavior;
-- stable TASK IDs, explicit task switching, and natural-mention drift warnings;
-- Wiki/conventions index diagnostics (broken, unsafe, duplicate, orphan, stale) and HANDOFF acceptance checks with a safe-command runner;
+- stable TASK IDs, explicit task switching, and scored natural-language drift warnings with visible match evidence;
+- Wiki/conventions index diagnostics (broken, unsafe, duplicate, orphan, stale), bounded semantic candidate generation, deterministic convention conflict resolution, and HANDOFF acceptance checks with a safe-command runner;
 - duplicate prompt suppression plus resume/compact reinjection;
 - a guarded unpushed-commit block that clears after the user pushes;
 - a strict continuity block that clears after evidence, state, dev-log, and capability records are complete;
@@ -71,4 +71,4 @@ A build is eligible for preview release only when the deterministic suite, plugi
 
 ## Deliberately not claimed yet
 
-The current suite does not prove interactive hook trust review, creation against a real GitHub account, multi-day systemd stability, automatic semantic Wiki consolidation, or recovery from a real reclaimed machine. Claude Code, macOS, and Windows are explicitly outside this work's release scope. The suite does verify conservative semantic-overlap merge suggestions, explicit convention conflict diagnostics, and no-ID goal-drift warnings locally. Remaining boundaries are explicit release limits rather than assumed coverage.
+The current suite does not prove interactive hook trust review, multi-day systemd stability, automatic semantic Wiki consolidation, or recovery from a real reclaimed machine. Claude Code, macOS, and Windows are explicitly outside this work's release scope. A real GitHub create/push/delete canary has passed; it remains an operational canary that must be repeated after credential or policy changes. The suite verifies bounded semantic-overlap candidates, deterministic convention conflict resolution with safe blocking for ties, and scored no-ID goal-drift warnings locally. Remaining boundaries are explicit release limits rather than assumed coverage.

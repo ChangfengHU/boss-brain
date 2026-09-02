@@ -571,6 +571,8 @@ class UserJourneyTest(unittest.TestCase):
             payload={"session_id": "legacy-goals", "prompt": "请迁移 worker deployment 到新环境"},
         )
         self.assertIn("低置信度目标漂移提示", drift.stdout)
+        self.assertIn("匹配置信度", drift.stdout)
+        self.assertIn("依据", drift.stdout)
         trace = json.loads(self.boss("explain", "--json").stdout)
         self.assertEqual(trace["mode"], "goal-drift")
         self.assertEqual(trace["content_policy"], "pointer-only")
@@ -840,6 +842,7 @@ class UserJourneyTest(unittest.TestCase):
             "PATH": f"{fake_bin}:{self.env['PATH']}",
             "FAKE_REMOTE": remote.as_uri(),
             "FAKE_GH_LOG": str(self.home / "gh.log"),
+            "GH_TOKEN": "test-token-never-persisted",
         }
         created = self.boss(
             "machine",
@@ -853,6 +856,10 @@ class UserJourneyTest(unittest.TestCase):
         self.assertIn("repo create", (self.home / "gh.log").read_text(encoding="utf-8"))
         self.assertEqual(git(machine, "remote", "get-url", "origin").stdout.strip(), remote.as_uri())
         self.assertTrue(git(machine, "rev-parse", "@{u}").stdout.strip())
+        self.assertEqual(git(machine, "config", "--local", "--get", "credential.helper").stdout, "")
+        for path in machine.rglob("*"):
+            if path.is_file():
+                self.assertNotIn("test-token-never-persisted", path.read_text(encoding="utf-8", errors="ignore"))
 
     def test_deleted_registered_project_is_reported_restored_and_idempotent(self) -> None:
         project_remote = self.home / "remotes" / "deleted-project.git"
@@ -994,14 +1001,21 @@ class UserJourneyTest(unittest.TestCase):
 
         (wiki / "recovery-one.md").write_text("recovery deployment rollback lesson stable\n", encoding="utf-8")
         (wiki / "recovery-two.md").write_text("recovery deployment rollback lesson improved\n", encoding="utf-8")
+        noise_links = []
+        for index in range(60):
+            name = f"noise-{index}.md"
+            (wiki / name).write_text(f"commonboilerplate uniquetopic{index}\n", encoding="utf-8")
+            noise_links.append(f"- [Noise {index}]({name})\n")
         (wiki / "index.md").write_text(
             (wiki / "index.md").read_text(encoding="utf-8")
-            + "- [Recovery one](recovery-one.md)\n- [Recovery two](recovery-two.md)\n", encoding="utf-8"
+            + "- [Recovery one](recovery-one.md)\n- [Recovery two](recovery-two.md)\n"
+            + "".join(noise_links), encoding="utf-8"
         )
         semantic = self.boss("wiki", "check", str(repo), "--json")
         self.assertTrue(semantic.stdout, semantic.stderr)
         semantic_value = json.loads(semantic.stdout)
         self.assertTrue(semantic_value["merge_suggestions"])
+        self.assertLess(semantic_value["semantic_comparisons"], 10)
 
         conventions = brain / "conventions"
         conventions.mkdir()
@@ -1013,6 +1027,15 @@ class UserJourneyTest(unittest.TestCase):
         conflict = self.boss("conventions", "check", str(repo), "--json")
         self.assertEqual(conflict.returncode, 1)
         self.assertEqual(json.loads(conflict.stdout)["conflicts"][0]["target"], "rules.md")
+        (conventions / "strict.md").write_text(
+            "scope: directory\npriority: 5\nconflicts-with: rules.md\nsupersedes: rules.md\n",
+            encoding="utf-8",
+        )
+        resolved = self.boss("conventions", "check", str(repo), "--fix", "--json")
+        self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
+        resolution = json.loads(resolved.stdout)["resolved_conflicts"][0]
+        self.assertEqual(resolution["winner"], "strict.md")
+        self.assertEqual(resolution["reason"], "supersedes")
 
     def test_status_commands_return_actionable_user_output(self) -> None:
         repo = make_repo(self.home / "work" / "visible", "VISIBLE_READY")

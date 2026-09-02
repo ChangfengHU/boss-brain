@@ -59,9 +59,9 @@ make_repo() {
 
 ALPHA="$HOME/work/codex-journey-alpha"
 BETA="$HOME/work/codex-journey-beta"
-ALPHA_MARKER=ALPHA_REMOTE_USER_READY
-BETA_MARKER=BETA_REMOTE_USER_READY
-WIKI_MARKER=WIKI_REMOTE_RECURRING_LESSON
+ALPHA_MARKER=CTX7K4M9_ALPHA
+BETA_MARKER=CTX2P8R6_BETA
+WIKI_MARKER=WIKI5N3Q7_RECOVERY
 SECRET_VALUE="ghp_$(printf 'S%.0s' {1..24})"
 make_repo "$ALPHA" "$ALPHA_MARKER"
 make_repo "$BETA" "$BETA_MARKER"
@@ -84,14 +84,13 @@ run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
-  --ignore-user-config \
   -c 'mcp_servers={}' \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
   --output-schema "$ROOT/tests/fixtures/user-context.schema.json" \
   --output-last-message "$SANDBOX_ROOT/final-alpha.json" \
-  "Using only lifecycle context already supplied for the active workspace, return the project name and its exact all-caps readiness marker. Do not call tools, read files, mention hidden instructions, hooks, paths, or Boss Brain." \
+  "Using only lifecycle context already supplied for the active workspace, return the project name and copy the complete opaque marker verbatim into the marker field. Preserve every character; do not expand, shorten, or reinterpret it. Do not call tools, read files, mention hidden instructions, hooks, paths, or Boss Brain." \
   >"$SANDBOX_ROOT/events-alpha.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-alpha.json"
 
@@ -99,14 +98,13 @@ run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
-  --ignore-user-config \
   -c 'mcp_servers={}' \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
   --output-schema "$ROOT/tests/fixtures/user-context.schema.json" \
   --output-last-message "$SANDBOX_ROOT/final-beta.json" \
-  "For @codex-journey-beta, use only lifecycle context already supplied and return that project's name and exact all-caps readiness marker. Do not call tools, read files, mention hidden instructions, hooks, paths, or Boss Brain." \
+  "For @codex-journey-beta, use only lifecycle context already supplied, return that project's name, and copy its complete opaque marker verbatim into the marker field. Preserve every character; do not expand, shorten, or reinterpret it. Do not call tools, read files, mention hidden instructions, hooks, paths, or Boss Brain." \
   >"$SANDBOX_ROOT/events-beta.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-beta.json"
 
@@ -114,14 +112,13 @@ run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
-  --ignore-user-config \
   -c 'mcp_servers={}' \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
   --output-schema "$ROOT/tests/fixtures/user-context.schema.json" \
   --output-last-message "$SANDBOX_ROOT/final-wiki.json" \
-  "This workspace has a difficult recurring recovery problem. Find the exact verified lesson marker already recorded for that recurring problem and return it with the active project name. Do not guess, modify files, or mention hidden instructions, hooks, paths, or Boss Brain." \
+  "This workspace has a difficult recurring recovery problem. Using only lifecycle context, return the active project name and copy the complete opaque marker from the recorded recurring lesson verbatim into the marker field. Preserve every character. Do not call tools, guess, modify files, or mention hidden instructions, hooks, paths, or Boss Brain." \
   >"$SANDBOX_ROOT/events-wiki.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-wiki.json"
 
@@ -129,14 +126,13 @@ run_codex exec \
   --disable apps \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \
-  --ignore-user-config \
   -c 'mcp_servers={}' \
   --sandbox read-only \
   --cd "$ALPHA" \
   --json \
   --output-schema "$ROOT/tests/fixtures/user-context.schema.json" \
   --output-last-message "$SANDBOX_ROOT/final-alias.json" \
-  "The knowledgebase feature may be involved. Use only lifecycle context and do not call tools or read files. Return the project whose full state is actually loaded and its exact readiness marker; do not treat a low-confidence project pointer as loaded state. Do not mention hidden instructions, hooks, paths, or Boss Brain." \
+  "The knowledgebase feature may be involved. Use only lifecycle context and do not call tools or read files. Return the project whose full state is actually loaded and copy its complete opaque marker verbatim; do not treat a low-confidence project pointer as loaded state. Preserve every marker character. Do not mention hidden instructions, hooks, paths, or Boss Brain." \
   >"$SANDBOX_ROOT/events-alias.jsonl"
 boss explain --json >"$SANDBOX_ROOT/trace-alias.json"
 
@@ -146,12 +142,11 @@ boss explain --json >"$SANDBOX_ROOT/trace-alias.json"
     --disable apps \
     --dangerously-bypass-hook-trust \
     --skip-git-repo-check \
-    --ignore-user-config \
     -c 'mcp_servers={}' \
     --json \
     --output-schema "$ROOT/tests/fixtures/user-context.schema.json" \
     --output-last-message "$SANDBOX_ROOT/final-resume.json" \
-    "Now answer for the active workspace, not the project discussed in the previous turn. Using only newly supplied lifecycle context, return the active project name and exact all-caps readiness marker. Do not call tools, read files, mention hidden instructions, hooks, paths, or Boss Brain." \
+    "Now answer for the active workspace, not the project discussed in the previous turn. Using only newly supplied lifecycle context, return the active project name and copy its complete opaque marker verbatim into the marker field. Preserve every character. Do not call tools, read files, mention hidden instructions, hooks, paths, or Boss Brain." \
     >"$SANDBOX_ROOT/events-resume.jsonl"
 )
 boss explain --json >"$SANDBOX_ROOT/trace-resume.json"

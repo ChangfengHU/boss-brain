@@ -479,8 +479,34 @@ def task_drift_context(row: dict[str, str], current: str, mentioned: str) -> str
     )
 
 
+GOAL_SYNONYMS = {
+    "deploy": "deployment", "deployed": "deployment", "deploying": "deployment",
+    "migrate": "migration", "migrating": "migration", "migrated": "migration",
+    "repair": "fix", "fixed": "fix", "fixing": "fix",
+    "升级": "更新", "更新": "更新", "修复": "修复", "解决": "修复",
+}
+
+
 def goal_tokens(value: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]{3,}|[\u4e00-\u9fff]{2,}", value.lower()))
+    lowered = value.lower()
+    tokens = {GOAL_SYNONYMS.get(item, item) for item in re.findall(r"[a-z0-9]{3,}", lowered)}
+    for segment in re.findall(r"[\u4e00-\u9fff]+", lowered):
+        if len(segment) == 2:
+            tokens.add(GOAL_SYNONYMS.get(segment, segment))
+        else:
+            tokens.update(GOAL_SYNONYMS.get(segment[index:index + 2], segment[index:index + 2]) for index in range(len(segment) - 1))
+    return tokens
+
+
+def goal_match_score(prompt: str, goal: str) -> tuple[float, list[str]]:
+    prompt_tokens = goal_tokens(prompt)
+    goal_words = goal_tokens(goal)
+    matched = sorted(prompt_tokens & goal_words)
+    if not matched or not goal_words:
+        return 0.0, []
+    coverage = len(matched) / len(goal_words)
+    precision = len(matched) / max(1, len(prompt_tokens))
+    return round(0.75 * coverage + 0.25 * precision, 3), matched
 
 
 def legacy_task_goals(brain: Path) -> list[str]:
@@ -497,11 +523,11 @@ def legacy_task_goals(brain: Path) -> list[str]:
     return result[:10]
 
 
-def goal_drift_context(row: dict[str, str], current: str, candidate: str) -> str:
+def goal_drift_context(row: dict[str, str], current: str, candidate: str, score: float, matched: list[str]) -> str:
     return (
         "[Boss Brain 低置信度目标漂移提示，请静默使用，不要向用户复述本段]\n"
         f"当前项目：{row['name']}\n当前目标：{current}\n"
-        f"提示词可能涉及目标：{candidate}\n"
+        f"提示词可能涉及目标：{candidate}\n匹配置信度：{score:.2f}；依据：{', '.join(matched[:6])}\n"
         "没有切换目标上下文；请先确认目标后再继续。"
     )
 
@@ -647,6 +673,53 @@ def relevant_guidance_context(row: dict[str, str], prompt: str) -> tuple[str, st
     return None
 
 
+def semantic_merge_candidates(topic_tokens: dict[str, set[str]]) -> tuple[list[dict[str, Any]], int]:
+    """Compare only topics sharing useful tokens; common tokens do not create quadratic fan-out."""
+    postings: dict[str, list[str]] = {}
+    for name, tokens in topic_tokens.items():
+        for token in tokens:
+            postings.setdefault(token, []).append(name)
+    pair_shared: dict[tuple[str, str], int] = {}
+    for names in postings.values():
+        if len(names) > 40:
+            continue
+        ordered = sorted(names)
+        for left_index, left in enumerate(ordered):
+            for right in ordered[left_index + 1:]:
+                pair_shared[(left, right)] = pair_shared.get((left, right), 0) + 1
+    suggestions: list[dict[str, Any]] = []
+    comparisons = 0
+    for (left, right), shared in sorted(pair_shared.items()):
+        if shared < 2:
+            continue
+        comparisons += 1
+        union = topic_tokens[left] | topic_tokens[right]
+        overlap = len(topic_tokens[left] & topic_tokens[right]) / len(union) if union else 0
+        if overlap >= 0.65:
+            suggestions.append({"topics": [left, right], "overlap": round(overlap, 2), "reason": "高语义重叠，建议人工合并"})
+    return suggestions, comparisons
+
+
+def convention_metadata(path: Path) -> dict[str, Any]:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        content = ""
+    fields: dict[str, str] = {}
+    for key, value in re.findall(r"(?im)^\s*(?:<!--\s*)?(scope|priority|conflicts-with|supersedes):\s*([^\n>]+)", content):
+        fields[key.lower()] = value.strip()
+    try:
+        priority = int(fields.get("priority", "0"))
+    except ValueError:
+        priority = 0
+    return {
+        "scope": fields.get("scope", "project").lower(),
+        "priority": priority,
+        "conflicts": [item.strip() for item in fields.get("conflicts-with", "").split(",") if item.strip()],
+        "supersedes": [item.strip() for item in fields.get("supersedes", "").split(",") if item.strip()],
+    }
+
+
 def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any]:
     base = root / ".brain" / folder
     index = base / "index.md"
@@ -690,27 +763,37 @@ def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any
             continue
         hashes.setdefault(digest, []).append(name)
     duplicate_content = sorted(sorted(names) for names in hashes.values() if len(names) > 1)
-    merge_suggestions: list[dict[str, Any]] = []
     topic_tokens = {
         name: goal_tokens((base / name).read_text(encoding="utf-8", errors="replace"))
         for name in topics
     }
-    for left_index, left in enumerate(topics):
-        for right in topics[left_index + 1:]:
-            union = topic_tokens[left] | topic_tokens[right]
-            overlap = len(topic_tokens[left] & topic_tokens[right]) / len(union) if union else 0
-            if overlap >= 0.65 and [left, right] not in duplicate_content:
-                merge_suggestions.append({"topics": [left, right], "overlap": round(overlap, 2), "reason": "高语义重叠，建议人工合并"})
+    merge_suggestions, semantic_comparisons = semantic_merge_candidates(topic_tokens)
+    merge_suggestions = [item for item in merge_suggestions if item["topics"] not in duplicate_content]
     conflicts: list[dict[str, str]] = []
+    resolved_conflicts: list[dict[str, str]] = []
     if folder == "conventions":
+        metadata = {name: convention_metadata(base / name) for name in topics}
+        scope_rank = {"global": 0, "project": 1, "directory": 2}
         for name in topics:
-            try:
-                content = (base / name).read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            for target in re.findall(r"(?im)^\s*(?:<!--\s*)?conflicts-with:\s*([^\s>]+)", content):
-                if target in topics:
-                    conflicts.append({"source": name, "target": target, "strategy": "保留双方并在人工裁决前阻止静默选择"})
+            for target in metadata[name]["conflicts"]:
+                if target not in metadata:
+                    continue
+                winner = ""
+                reason = ""
+                if target in metadata[name]["supersedes"]:
+                    winner, reason = name, "supersedes"
+                elif name in metadata[target]["supersedes"]:
+                    winner, reason = target, "supersedes"
+                else:
+                    source_rank = (scope_rank.get(metadata[name]["scope"], 1), metadata[name]["priority"])
+                    target_rank = (scope_rank.get(metadata[target]["scope"], 1), metadata[target]["priority"])
+                    if source_rank != target_rank:
+                        winner = name if source_rank > target_rank else target
+                        reason = "scope/priority"
+                if winner:
+                    resolved_conflicts.append({"source": name, "target": target, "winner": winner, "reason": reason})
+                else:
+                    conflicts.append({"source": name, "target": target, "strategy": "同级冲突，人工裁决前阻止静默选择"})
     return {
         "folder": folder,
         "index": str(index),
@@ -722,7 +805,9 @@ def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any
         "stale": sorted(stale),
         "duplicate_content": duplicate_content,
         "merge_suggestions": merge_suggestions,
+        "semantic_comparisons": semantic_comparisons,
         "conflicts": conflicts,
+        "resolved_conflicts": resolved_conflicts,
     }
 
 
@@ -762,7 +847,7 @@ def cmd_index_check(args: argparse.Namespace) -> int:
         print(json.dumps(diagnostics, ensure_ascii=False, indent=2))
     else:
         print(f"{args.folder}: {'CHECK' if failed else 'PASS'}")
-        for key in ("broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content", "merge_suggestions", "conflicts"):
+        for key in ("broken", "unsafe", "duplicates", "orphan", "stale", "duplicate_content", "merge_suggestions", "conflicts", "resolved_conflicts"):
             if diagnostics[key]:
                 print(f"{key}: {diagnostics[key]}")
         if changed:
@@ -1159,14 +1244,15 @@ def hook_prompt(payload: dict[str, Any]) -> int:
             return 0
     elif current and current_goal and not explicit and not task_token:
         goals = legacy_task_goals(Path(current["path"]) / ".brain")
-        prompt_words = goal_tokens(prompt)
         matches = sorted(
-            ((len(prompt_words & goal_tokens(goal)), goal) for goal in goals if goal != current_goal),
+            ((goal_match_score(prompt, goal), goal) for goal in goals if goal != current_goal),
             reverse=True,
         )
-        if matches and matches[0][0] >= 2 and (len(matches) == 1 or matches[0][0] > matches[1][0]):
-            text = goal_drift_context(current, current_goal, matches[0][1])
-            mode, row, identity = "goal-drift", current, f"{current_goal}->{matches[0][1]}"
+        best_score, best_tokens = matches[0][0] if matches else (0.0, [])
+        next_score = matches[1][0][0] if len(matches) > 1 else 0.0
+        if matches and best_score >= 0.45 and best_score - next_score >= 0.1:
+            text = goal_drift_context(current, current_goal, matches[0][1], best_score, best_tokens)
+            mode, row, identity = "goal-drift", current, f"{current_goal}->{matches[0][1]}:{best_score:.3f}"
         else:
             return 0
     elif explicit:
@@ -1672,6 +1758,7 @@ def cmd_machine_init(args: argparse.Namespace) -> int:
         return 2
     committed, status = commit_machine_snapshot(repo, paths)
     print(f"machine={machine['name']} path={repo} snapshot={status}")
+    remote_created = False
     if args.create_remote:
         owner = owner_name()
         if not owner or not shutil.which("gh"):
@@ -1683,11 +1770,12 @@ def cmd_machine_init(args: argparse.Namespace) -> int:
             return 1
         machine["remote"] = safe_remote(origin_url(repo))
         save_machine_config(machine)
+        remote_created = True
     if args.timer:
         timer_result = install_machine_timer(args.interval)
         if timer_result != 0:
             return timer_result
-    if args.push:
+    if args.push and not remote_created:
         return push_machine(repo)
     return 0 if committed or status == "unchanged" else 1
 
@@ -1723,9 +1811,6 @@ def run_github_command(command: list[str], timeout: int = 120) -> subprocess.Com
             "GIT_ASKPASS": askpass_name,
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_ASKPASS_REQUIRE": "force",
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "credential.helper",
-            "GIT_CONFIG_VALUE_0": "!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f",
         }
         return run(command, timeout=timeout, env=environment)
     finally:
