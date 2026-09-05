@@ -12,6 +12,7 @@ import argparse
 import contextlib
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -1602,15 +1603,17 @@ def hook_stop(payload: dict[str, Any]) -> int:
         if repo.is_dir() and (repo / ".git").exists():
             findings.extend(audit_repo(repo, str(info.get("baseline") or ""), policy, str(info.get("task_id") or "")))
     append_audit(session_id, findings)
+    pending = knowledge_pending(session_id)
+    reminder = {"systemMessage": knowledge_context(session_id, pending)} if pending else {}
     if mode == "observe-only":
         print("{}")
         return 0
     if policy == "quiet":
-        print("{}")
+        print(json.dumps(reminder, ensure_ascii=False))
         return 0
     selected = findings if policy == "strict" else [item for item in findings if item["level"] == "data-loss"]
     if not selected:
-        print("{}")
+        print(json.dumps(reminder, ensure_ascii=False))
         return 0
     reason = "Boss Brain 收工检查：\n" + "\n".join(f"- {item['message']}" for item in selected[:8])
     reason += "\n请只处理本会话产生的改动；若属于其他并发会话，不要代为提交或推送。"
@@ -1631,8 +1634,110 @@ def cmd_hook(args: argparse.Namespace) -> int:
     if args.event == "session-start":
         return hook_session_start(payload)
     if args.event == "prompt-submit":
-        return hook_prompt(payload)
+        capture = io.StringIO()
+        with contextlib.redirect_stdout(capture):
+            result = hook_prompt(payload)
+        raw = capture.getvalue().strip()
+        sid = str(payload.get("session_id") or "nosid")
+        prompt = str(payload.get("prompt") or "")
+        if session_mode(sid) != "disabled":
+            knowledge_prompt(payload)
+        pending = knowledge_pending(sid)
+        if pending and session_mode(sid) == "enabled":
+            value = json.loads(raw) if raw else {}
+            output = value.setdefault("hookSpecificOutput", {"hookEventName": "UserPromptSubmit"})
+            output["additionalContext"] = output.get("additionalContext", "") + knowledge_context(sid, pending)
+            print(json.dumps(value, ensure_ascii=False))
+        elif raw:
+            print(raw)
+        return result
     return hook_stop(payload)
+
+
+def knowledge_pending(session_id: str) -> list[dict[str, Any]]:
+    return [item for item in load_session(session_id).get("knowledge_reviews", []) if item["status"] == "pending"]
+
+
+def knowledge_context(session_id: str, pending: list[dict[str, Any]]) -> str:
+    refs = ", ".join(item["id"] for item in pending[:8])
+    return (
+        "\n[Brain 知识同步检查]\n"
+        f"本会话存在待核实记录 {refs}。这是同步候选，不是已确认事实或写入授权。"
+        "先核实项目归属，区分用户决定、代码实况和推断，检查既有架构/操作文档是否过期。"
+        "已授权的关键文档修正不以业务代码 commit 为前提；普通问答不写日志。"
+        "禁止写入/仅讨论的用户约束优先，必要时保留 pending 或标 deferred。"
+        "应修正原权威文档而非追加互相矛盾的副本；其他项目内容不能写入当前仓库。"
+        f"用 boss knowledge list --session {shlex.quote(session_id)} 查看；"
+        "更新后用 knowledge resolve --status updated --file <已修改文档> 关闭，"
+        "误触发用 dismissed，禁止写入用 deferred；结束时如仍未同步须明确告知用户。"
+    )
+
+
+def knowledge_register(session_id: str, root: Path, trigger: str, identity: str) -> None:
+    root = root.resolve()
+    value = load_session(session_id)
+    reviews = value.setdefault("knowledge_reviews", [])
+    rid = hashlib.sha256(f"{root}:{identity}".encode()).hexdigest()[:16]
+    if any(item["id"] == rid for item in reviews):
+        return
+    # Store metadata and hashes only; never store prompts or inferred facts.
+    files = {}
+    for relative in git(root, "ls-files").splitlines():
+        path = root / relative
+        if path.suffix == ".md" and not path.is_symlink() and path.is_file():
+            files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    reviews.append({"id": rid, "project": str(root), "trigger": trigger,
+                    "status": "pending", "created_at": now_iso(), "files": files})
+    save_session(session_id, value)
+
+
+def knowledge_prompt(payload: dict[str, Any]) -> None:
+    prompt = str(payload.get("prompt") or "")
+    correction = re.search(r"(你没|没有弄清|不对|纠正|不是|correction|incorrect|actually)", prompt, re.I)
+    domain = re.search(r"(架构|数据源|开发机器|开发方式|发布|版本|关系|规范|architecture|release|deployment)", prompt, re.I)
+    explicit_memory = re.search(r"(记下来|沉淀到|同步到.*文档|update.*(?:architecture|runbook))", prompt, re.I)
+    if not (correction and domain or explicit_memory):
+        return
+    rows = read_registry()
+    explicit = explicit_project(prompt, rows)
+    root = Path(explicit["path"]) if explicit else git_root(Path(str(payload.get("cwd") or os.getcwd())))
+    if not root:
+        return  # Ambiguous aliases never select a write target.
+    knowledge_register(str(payload.get("session_id") or "nosid"), root,
+                       "explicit-memory" if explicit_memory else "correction-candidate",
+                       hashlib.sha256(prompt.encode()).hexdigest())
+
+
+def cmd_knowledge(args: argparse.Namespace) -> int:
+    if args.action == "flag":
+        root = git_root(Path(args.path))
+        if not root:
+            print("knowledge flag requires a Git workspace", file=sys.stderr)
+            return 2
+        knowledge_register(args.session, root, "agent-verified-discovery", args.key)
+    elif args.action == "resolve":
+        value = load_session(args.session)
+        item = next((r for r in value.get("knowledge_reviews", []) if r["id"] == args.id), None)
+        if not item or item["status"] != "pending":
+            print("pending knowledge review not found", file=sys.stderr)
+            return 2
+        if args.status == "updated":
+            root = Path(item["project"]).resolve()
+            path = (root / (args.file or "")).resolve()
+            if not path.is_relative_to(root) or path.suffix != ".md" or not path.is_file():
+                print("updated requires a Markdown file inside the selected project", file=sys.stderr)
+                return 2
+            relative = str(path.relative_to(root))
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if item["files"].get(relative) == digest:
+                print("document unchanged since review creation", file=sys.stderr)
+                return 2
+            item["evidence"] = {"file": relative, "sha256": digest}
+        item["status"] = args.status
+        item["resolved_at"] = now_iso()
+        save_session(args.session, value)
+    print(redact_secrets(json.dumps(load_session(args.session).get("knowledge_reviews", []), ensure_ascii=False)))
+    return 0
 
 
 def state_summary(path: Path) -> str:
@@ -2331,6 +2436,19 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="boss", description="Machine control and portable project continuity")
     result.add_argument("--version", action="version", version=f"boss {VERSION}")
     subs = result.add_subparsers(dest="command", required=True)
+    knowledge = subs.add_parser("knowledge")
+    knowledge_subs = knowledge.add_subparsers(dest="action", required=True)
+    for action in ("list", "flag", "resolve"):
+        item = knowledge_subs.add_parser(action)
+        item.add_argument("--session", required=True)
+        if action == "flag":
+            item.add_argument("--path", default=".")
+            item.add_argument("--key", required=True)
+        if action == "resolve":
+            item.add_argument("--id", required=True)
+            item.add_argument("--status", required=True, choices=("updated", "deferred", "dismissed"))
+            item.add_argument("--file")
+        item.set_defaults(func=cmd_knowledge)
     hook = subs.add_parser("hook")
     hook.add_argument("event", choices=("session-start", "prompt-submit", "stop"))
     hook.set_defaults(func=cmd_hook)

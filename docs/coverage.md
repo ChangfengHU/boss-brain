@@ -4,6 +4,7 @@ Passing test counts are not a product-completeness claim. A capability is called
 
 | Product behavior | Status | Automated evidence | Remaining boundary |
 | --- | --- | --- | --- |
+| Critical knowledge review and writeback | Verified locally | `tests.test_knowledge_sync`: actual prompt/Stop hooks, continuation, changed-document evidence, isolation, no-write deferral, modes and privacy | Lexical detection creates candidates only; tool discoveries need explicit flag; no cross-session queue or semantic truth proof; host UI reminder not authenticated-E2E tested |
 | Owned, active repository discovery | Verified | `test_scan_adopts_only_owned_active_repo_without_creating_brain` | Real large-home patrol performance |
 | Foreign, stale, empty, malformed, colliding repositories | Verified | discovery and resilience tests | Filesystem permission-denied trees |
 | Concurrent registry updates and stale/live locks | Verified | concurrency and lock recovery tests | Multi-host shared filesystem is unsupported |

@@ -57,6 +57,7 @@ boss machine timer-install
 boss machine restore /path/to/boss-machine --clone
 boss vault-ref service:github --purpose "repository access"
 boss doctor
+boss knowledge list --session SESSION_ID
 ```
 
 `quiet` records findings without blocking. `guarded` blocks only data-loss risks such as unpushed commits. `strict` also enforces project continuity records.
@@ -76,7 +77,7 @@ See [architecture](docs/architecture.md), [security](docs/security.md), [migrati
 Run the deterministic and user-journey suite with:
 
 ```bash
-python3 -m unittest -v tests.test_boss tests.test_resilience tests.test_user_journeys
+python3 -m unittest -v tests.test_boss tests.test_resilience tests.test_user_journeys tests.test_knowledge_sync
 ```
 
 The authenticated Codex user-journey test must run on a disposable host and copies login state only into a temporary directory that is deleted on exit:
@@ -86,6 +87,8 @@ CODEX_AUTH_SOURCE=/secure/path/auth.json ./tests/remote_codex_e2e.sh
 ```
 
 See [testing strategy](docs/testing.md) and the [capability-to-test coverage map](docs/coverage.md) for explicit evidence and remaining boundaries.
+
+Critical architecture/operating corrections now produce session-scoped knowledge reviews, even without a business commit. Verified tool discoveries use an explicit flag; existing project documents are updated only within user authorization. See [knowledge synchronization](docs/knowledge-sync.md) for commands, no-write behavior, and verification limits.
 
 ## Uninstall and rollback
 
