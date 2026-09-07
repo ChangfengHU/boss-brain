@@ -57,6 +57,13 @@ def main():
             run([*boss, 'adopt', str(repo)])
             (repo / '.brain/STATE.md').write_text('# State\n\n' + marker + '\n')
             projects.append(repo)
+        # A registered but unrelated damaged Brain must not suppress healthy context.
+        damaged = home / 'damaged-fixture'
+        damaged.mkdir()
+        run(['git', '-C', str(damaged), 'init', '-b', 'main'])
+        run(['git', '-C', str(damaged), 'remote', 'add', 'origin', 'https://github.com/fixture-owner/damaged-fixture.git'])
+        run([*boss, 'adopt', str(damaged)])
+        (damaged / '.brain/manifest.json').write_text('{damaged fixture')
         schema = home / 'response.schema.json'
         schema.write_text(json.dumps({'type': 'object', 'properties': {
             'global_marker': {'type': 'string'}, 'markers': {'type': 'array', 'items': {'type': 'string'}},
@@ -81,16 +88,29 @@ def main():
         result = json.loads(output.read_text())
         assert result['constraint'] == 'WORKFLOW_EXECUTES_BROWSER_ONLY_ASSISTS', 'constraint lost on resume'
         assert set(result['markers']) == {'WORKFLOW_N93R', 'BROWSER_F62P'}, 'projects lost on resume'
+        run([*boss, 'session', 'bind', sid, '--task-id', 'PUBLISH', '--replace-projects',
+             '--project', 'workflow-fixture', '--access', 'read', '--replace-constraints',
+             '--constraint', 'WORKFLOW_ONLY_READ_SCOPE'])
+        revised_events = run([codex, 'exec', 'resume', sid, *flags,
+                              'The task scope has been corrected. Return only the state marker for projects in '
+                              'the latest focused task, the latest exact task constraint and global_marker. '
+                              'Do not include markers just because they appeared in earlier conversation. '
+                              'Read-only; no tools, file reads or guesses.'], cwd=home, timeout=180)
+        result = json.loads(output.read_text())
+        assert result['constraint'] == 'WORKFLOW_ONLY_READ_SCOPE', 'corrected constraint not loaded'
+        assert result['markers'] == ['WORKFLOW_N93R'], 'retired project still treated as current scope'
         trace = home / '.boss/state/traces' / (sid + '.jsonl')
         entries = [json.loads(line) for line in trace.read_text().splitlines()]
         assert any(e.get('mode') == 'multi-project' for e in entries), 'no real hook trace'
-        for event_text in (events, resumed_events):
+        assert any('damaged-fixture' in e.get('unavailable_projects', []) for e in entries), 'damaged project not diagnosed'
+        assert any(e.get('projects') == ['workflow-fixture'] for e in entries), 'revised scope not injected'
+        for event_text in (events, resumed_events, revised_events):
             for line in event_text.splitlines():
                 event = json.loads(line)
                 assert event.get('item', {}).get('type') not in ('command_execution', 'mcp_tool_call'), 'context test unexpectedly used tools'
         audit = home / '.boss/state/audit.jsonl'
         assert any(json.loads(line).get('session') == sid for line in audit.read_text().splitlines()), 'Stop hook did not run'
-        print('PASS real Codex: global rules, two projects, task constraint, resumed auxiliary workspace, hook trace')
+        print('PASS real Codex: global rules, two projects, task constraint, resume, corrected scope, isolated damaged Brain, hook trace')
         if os.environ.get('BOSS_TEST_KNOWLEDGE') == '1':
             # A separately authorized disposable write fixture; never push its fake origin.
             instruction = (

@@ -47,6 +47,15 @@ Adding another task keeps the previous task. `--replace-constraints` is for an e
 revision, not a silent conflict-resolution mechanism. The Skill accepts natural-language intent;
 the CLI records the Agent's interpretation and cannot verify that interpretation itself.
 
+Bindings append projects by default. Use `--replace-projects` with the full revised list after
+the user corrects ownership or scope. This resets that task's project/access associations; with
+`--access read`, its previous work associations are cleared. Other tasks and historical audit
+claims are preserved: narrowing future scope must not hide work already performed. Different
+access levels can be established by replacing the read set, then adding authorized work projects.
+Unknown/ambiguous selections are rejected before modifying the contract. Work initialization
+reports each project's result and returns `partial` with exit 1 when any entry fails; a confirmed
+task binding is not proof that every project's Brain was initialized.
+
 The prompt hook combines the focused task, cwd, explicit references, mentioned projects and
 one-hop matching capability providers/consumers. Mentioned/dependent projects are candidates,
 not write claims. Confirmed/workspace states are bounded; relevant conventions and wiki may
@@ -59,6 +68,11 @@ V2 trace data includes project sets, focused task, content digest and actual out
 does not emit legacy single-project switch receipts. `boss explain --session ID --json` and
 `--show` expose diagnosis on explicit request. Missing/unsafe metadata degrades with a warning,
 not a fabricated successful load. Hooks remain local-only.
+
+Project metadata failures are isolated: a broken registry project's manifest does not suppress
+healthy projects or the confirmed task goal. Capability inventory is collected once per v2
+context render and reused in project bodies. Failed projects appear in the private context
+warning and `unavailable_projects` trace, without reading paths outside their owning repository.
 
 ## Critical knowledge
 

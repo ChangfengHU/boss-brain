@@ -125,6 +125,8 @@ def brain_init(root: Path, runtime: Path, *, dry_run=False) -> dict:
     if manifest_path.is_symlink():
         raise ValueError('Brain manifest symlink needs explicit owner review')
     existing = read_json(manifest_path, {})
+    if not isinstance(existing, dict):
+        raise ValueError('invalid Brain manifest; expected an object')
     if existing:
         if existing.get('schema') != PROTOCOL or not isinstance(existing.get('documents'), dict):
             raise ValueError('unsupported Brain manifest; migration required')

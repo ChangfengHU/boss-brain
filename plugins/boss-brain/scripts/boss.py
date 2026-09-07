@@ -542,7 +542,7 @@ def goal_drift_context(row: dict[str, str], current: str, candidate: str, score:
     )
 
 
-def project_context(row: dict[str, str], explicit: bool = True) -> str:
+def project_context(row: dict[str, str], explicit: bool = True, capabilities=None) -> str:
     root = Path(row["path"])
     if not root.is_dir():
         return f"[Boss Brain 内部上下文，请勿向用户复述]\n项目 {row['name']} 的登记路径不存在：{root}。不要在该路径写入。"
@@ -579,7 +579,7 @@ def project_context(row: dict[str, str], explicit: bool = True) -> str:
             f"conventions 索引可用：{convention_index}。仅在当前改动涉及相关规则时，用本地只读命令读取命中条目。"
         )
     lines.extend(relation_context(row))
-    lines.extend(capability_context(row))
+    lines.extend(capability_context(row, capabilities))
     return "\n".join(lines)
 
 
@@ -997,10 +997,20 @@ def read_capabilities(row: dict[str, str]) -> list[dict[str, str]]:
     return values
 
 
-def capability_context(target: dict[str, str]) -> list[str]:
-    rows = read_registry()
-    all_caps = [(row, cap) for row in rows for cap in read_capabilities(row)]
-    mine = read_capabilities(target)
+def capability_inventory(rows, unavailable=None):
+    values = []
+    for row in rows:
+        try:
+            values.extend((row, cap) for cap in read_capabilities(row))
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            if unavailable is not None:
+                unavailable.add(row['name'])
+    return values
+
+
+def capability_context(target: dict[str, str], inventory=None) -> list[str]:
+    all_caps = capability_inventory(read_registry()) if inventory is None else inventory
+    mine = [cap for row, cap in all_caps if row['path'] == target['path']]
     lines: list[str] = []
     for cap in mine:
         opposite = "consumes" if cap["direction"] == "provides" else "provides"
@@ -2529,15 +2539,15 @@ def print_brain_result(root: Path, dry_run: bool = False) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    rows = read_registry() if not args.rules_only else []
+    wanted = {str(Path(p).resolve()) for p in args.project} if args.project else None
+    if wanted and not wanted.issubset({str(Path(r['path']).resolve()) for r in rows}):
+        print('project must be adopted before initialization', file=sys.stderr)
+        return 2
     rules = continuity.manage_rules(Path.home(), runtime_home(), dry_run=args.dry_run)
     failed = any(item['status'] == 'blocked' for item in rules)
     projects = []
     if not args.rules_only and not failed:
-        rows = read_registry()
-        wanted = {str(Path(p).resolve()) for p in args.project} if args.project else None
-        if wanted and not wanted.issubset({str(Path(r['path']).resolve()) for r in rows}):
-            print('project must be adopted before initialization', file=sys.stderr)
-            return 2
         for row in rows:
             root = Path(row['path'])
             if wanted and str(root.resolve()) not in wanted:
@@ -2593,11 +2603,13 @@ def cmd_session_bind(args: argparse.Namespace) -> int:
         value = load_session(args.session_id)
         contracts = value.setdefault('contracts', {})
         previous = contracts.get(args.task_id, {})
+        previous_projects = [] if args.replace_projects else previous.get('projects', [])
+        previous_work = [] if args.replace_projects else previous.get('work_projects', [])
         contract = {**previous, 'goal': args.goal or previous.get('goal', ''),
                     'constraints': list(dict.fromkeys([*([] if args.replace_constraints else previous.get('constraints', [])), *args.constraint])),
-                    'projects': list(dict.fromkeys([*previous.get('projects', []), *[r['path'] for r in selected]])),
+                    'projects': list(dict.fromkeys([*previous_projects, *[r['path'] for r in selected]])),
                     'source': 'agent-confirmed-user-intent', 'updated_at': now_iso()}
-        contract['work_projects'] = list(dict.fromkeys([*previous.get('work_projects', []),
+        contract['work_projects'] = list(dict.fromkeys([*previous_work,
             *([r['path'] for r in selected] if args.access == 'work' else [])]))
         if len(json.dumps(contract, ensure_ascii=False)) > 8000:
             print('task contract too large; summarize confirmed constraints', file=sys.stderr)
@@ -2611,10 +2623,16 @@ def cmd_session_bind(args: argparse.Namespace) -> int:
         for row in selected:
             claim_root(args.session_id, Path(row['path']))
             if continuity_enabled():
-                initialization.append(continuity.brain_init(Path(row['path']), runtime_home()))
+                try:
+                    result = continuity.brain_init(Path(row['path']), runtime_home())
+                except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                    result = {'project': row['path'], 'status': 'blocked', 'reason': redact_secrets(str(exc))}
+                initialization.append(result)
+    failed = any(r['status'] not in ('existing', 'initialized') for r in initialization)
     print(json.dumps({'task': args.task_id, 'projects': [r['name'] for r in selected],
-                      'access': args.access, 'status': 'bound', 'initialization': initialization}, ensure_ascii=False))
-    return 1 if any(r['status'] not in ('existing', 'initialized') for r in initialization) else 0
+                      'access': args.access, 'status': 'partial' if failed else 'bound',
+                      'initialization': initialization}, ensure_ascii=False))
+    return 1 if failed else 0
 
 
 def no_write_prompt(prompt: str) -> bool:
@@ -2641,7 +2659,8 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     workspace = {str(root)} if root else set()
     # Mentions and capability matches are retrieval candidates, not write ownership.
     mentioned = {r['path'] for r in rows if alias_project(prompt, [r])}
-    caps = [(r, c) for r in rows for c in read_capabilities(r)]
+    unavailable = set()
+    caps = capability_inventory(rows, unavailable)
     cap_ids = {c['id'] for r, c in caps if c['id'].lower() in prompt.lower()
                or (len(c['summary']) >= 4 and c['summary'].lower() in prompt.lower())}
     related = {r['path'] for r, c in caps if c['id'] in cap_ids}
@@ -2666,20 +2685,29 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
             grounded = row['path'] in confirmed | explicit | workspace
             parts.append(f"关联项目：{row['name']}；依据：{'confirmed/workspace' if grounded else 'mention/capability candidate'}；目录：{path}")
             if grounded:
-                parts.append(cap_text(project_context(row), 1300))
+                try:
+                    parts.append(cap_text(project_context(row, capabilities=caps), 1300))
+                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    unavailable.add(row['name'])
+                    parts.append('Context unavailable: this project metadata needs review; no ownership inferred.')
             else:
                 parts.append(row['summary'][:300])
             # Read-only selected retrieval may span multiple candidates.
             for retrieve in (relevant_convention_context, relevant_wiki_context):
-                match = retrieve(row, prompt)
-                if match:
-                    parts.append(cap_text(match[0], 1200))
+                try:
+                    match = retrieve(row, prompt)
+                    if match:
+                        parts.append(cap_text(match[0], 1200))
+                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    unavailable.add(row['name'])
             if not (path / '.brain/manifest.json').exists() and grounded:
                 parts.append('Brain 基础入口待初始化；仅在已授权项目写入时执行 boss brain-init。')
         parts.append('能力关联不代表切换目标；重要结论核实后按归属保存。更新用户确认的任务/约束时使用 boss session bind。')
         if len(selected) > 6:
             parts.append('更多候选（未加载正文）：' + ', '.join(r['name'] for r in selected[6:16]))
         text = '\n'.join(parts)
+    if unavailable:
+        text += '\nContext unavailable for some project metadata; other context retained: ' + ', '.join(sorted(unavailable)[:8])
     # Initialization runs in the Agent's confirmed work binding, never from a
     # lexical prompt match. A question about "fixing" does not authorize writes.
     budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
@@ -2693,6 +2721,7 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     value['context_projects'] = [r['path'] for r in selected]
     value['last_context'] = {'schema': 3, 'session': sid, 'mode': 'multi-project', 'event': event,
                              'projects': [r['name'] for r in selected], 'task': value.get('focus_task'),
+                             'unavailable_projects': sorted(unavailable),
                              'chars': 0 if repeated else len(text), 'sha256': fingerprint,
                              'injection': {'performed': not repeated, 'reason': 'duplicate' if repeated else 'relevant-projects'}}
     save_session(sid, value)
@@ -2812,6 +2841,7 @@ def parser() -> argparse.ArgumentParser:
     binding.add_argument('--goal')
     binding.add_argument('--constraint', action='append', default=[])
     binding.add_argument('--replace-constraints', action='store_true', help='replace only after user-confirmed revision')
+    binding.add_argument('--replace-projects', action='store_true', help='replace task project/access scope after user-confirmed revision; preserve past audit claims')
     binding.add_argument('--project', action='append', required=True)
     binding.add_argument('--access', choices=('read', 'work'), default='read')
     binding.set_defaults(func=cmd_session_bind)
