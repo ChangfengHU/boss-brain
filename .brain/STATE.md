@@ -10,6 +10,10 @@ this upgrade did not bulk-modify their documentation or business services.
 
 ## Verified behavior
 
+- `93ff028`: user-confirmed task scope replacement, per-project context failure
+  isolation and truthful partial initialization. All 92 deterministic tests passed.
+  Real Codex observed corrected scope after resume, healthy context despite a
+  damaged registered Brain, and a saved/resolved decision in a disposable project.
 - Deterministic suite covers global rules, document mappings, multi-project tasks,
   read-only boundaries, durable knowledge reviews and native hook migration.
 - Real isolated Codex journeys loaded global rules and two project contexts,
@@ -18,6 +22,10 @@ this upgrade did not bulk-modify their documentation or business services.
 - Source commits: `89b2780`, `35b23d7`, `e10243e`, `8677bbc`; all pushed.
 
 ## Next action
+
+Task scope corrections use `session bind --replace-projects` with the full revised
+list and access level. Inspect per-project failures in initialization results or
+`unavailable_projects` context traces; do not treat partial loading as full acceptance.
 
 Live-session cache-pruning regression repaired in `1e695fd`: missing Hook resources
 skip, and the installer preserves retired executable entrypoints. Both old Stop
