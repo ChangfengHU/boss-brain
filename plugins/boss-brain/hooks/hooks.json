@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook session-start",
-            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook session-start",
+            "command": "if command -v python3 >/dev/null 2>&1 && [ -f \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" ]; then python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook session-start; else printf '{}\\n'; fi",
+            "commandWindows": "if exist \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" (py -3 -V >nul 2>&1 & if errorlevel 1 (echo {}) else (py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook session-start)) else (echo {})",
             "timeout": 10,
             "additionalContextLimit": 5000
           }
@@ -19,8 +19,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook prompt-submit",
-            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook prompt-submit",
+            "command": "if command -v python3 >/dev/null 2>&1 && [ -f \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" ]; then python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook prompt-submit; else printf '{}\\n'; fi",
+            "commandWindows": "if exist \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" (py -3 -V >nul 2>&1 & if errorlevel 1 (echo {}) else (py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook prompt-submit)) else (echo {})",
             "timeout": 10,
             "additionalContextLimit": 5000
           }
@@ -32,8 +32,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook stop",
-            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook stop",
+            "command": "if command -v python3 >/dev/null 2>&1 && [ -f \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" ]; then python3 \"$CLAUDE_PLUGIN_ROOT/scripts/boss.py\" hook stop; else printf '{}\\n'; fi",
+            "commandWindows": "if exist \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" (py -3 -V >nul 2>&1 & if errorlevel 1 (echo {}) else (py -3 \"%CLAUDE_PLUGIN_ROOT%\\scripts\\boss.py\" hook stop)) else (echo {})",
             "timeout": 20
           }
         ]

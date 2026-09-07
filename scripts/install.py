@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -133,6 +134,13 @@ def strip_codex_hooks(text: str, include_legacy: bool) -> str:
     return "".join(output).rstrip() + "\n"
 
 
+def guarded_hook_command(script: Path, command: str) -> str:
+    executable = shlex.quote(sys.executable)
+    target = shlex.quote(str(script))
+    return (f'if [ -x {executable} ] && [ -f {target} ]; then '
+            f'{executable} {target} hook {command}; else printf \'{{}}\\n\'; fi')
+
+
 def manual_codex_hooks(script: Path) -> str:
     commands = {
         "UserPromptSubmit": "prompt-submit",
@@ -141,7 +149,7 @@ def manual_codex_hooks(script: Path) -> str:
     }
     values = ["# boss-brain:hooks:begin (managed)\n"]
     for event, command in commands.items():
-        value = f'{sys.executable} "{script}" hook {command}'
+        value = guarded_hook_command(script, command)
         values.extend([
             f"[[hooks.{event}]]\n",
             f"[[hooks.{event}.hooks]]\n",
@@ -179,7 +187,7 @@ def configure_claude_fallback(script: Path, skill: Path, include_legacy: bool) -
             "matcher": "*",
             "hooks": [{
                 "type": "command",
-                "command": f'{sys.executable} "{script}" hook {command} # {UNIFIED_MARKER}',
+                "command": guarded_hook_command(script, command) + f' # {UNIFIED_MARKER}',
                 "timeout": 20 if event == "Stop" else 10,
             }],
         })
@@ -204,6 +212,69 @@ def refresh_skill_entries(distribution: Path, backup: Path) -> None:
                     shutil.copytree(target, saved)
                 shutil.rmtree(target)
             shutil.copytree(source / name, target)
+
+
+def hook_cache_root() -> Path:
+    return Path(os.environ.get('CODEX_HOME', str(home() / '.codex'))) / 'plugins/cache/boss-brain/boss-brain'
+
+
+def remember_hook_versions(extra: list[str] | None = None) -> list[str]:
+    """Remember only verified Boss cache versions before native reinstall prunes them."""
+    record = boss_home() / 'compatibility/codex-hook-versions.json'
+    versions = json.loads(record.read_text()) if record.exists() else []
+    if not isinstance(versions, list):
+        raise RuntimeError('invalid hook compatibility inventory')
+    root = hook_cache_root()
+    for folder in root.iterdir() if root.is_dir() else []:
+        if folder.is_symlink() or not folder.is_dir():
+            continue
+        manifest = folder / '.codex-plugin/plugin.json'
+        if manifest.is_file() and not manifest.is_symlink():
+            value = json.loads(manifest.read_text())
+            if value.get('name') == 'boss-brain' and value.get('version') == folder.name:
+                versions.append(folder.name)
+    versions.extend(extra or [])
+    if any(not isinstance(v, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}', v) for v in versions):
+        raise RuntimeError('unsafe cache version; no compatibility files written')
+    versions = sorted(set(versions))
+    write(record, json.dumps(versions) + '\n')
+    return versions
+
+
+def restore_hook_entries(versions: list[str]) -> list[str]:
+    """Restore missing executable entries, not manifests or marketplace registration.
+
+    Existing running sessions retain the old command path even after Codex prunes
+    that cache. Bridges forward to the installed runtime so current policy applies.
+    Never overwrite an existing cached module or delete a compatibility entry here.
+    """
+    root = hook_cache_root()
+    runtime = boss_home() / 'distribution/plugins/boss-brain/scripts/boss.py'
+    bridge = ('#!/usr/bin/env python3\n'
+              '"""Boss Brain retired-cache compatibility entry for already-running sessions."""\n'
+              'import os\nfrom pathlib import Path\nimport sys\n\n'
+              f'target = Path({str(runtime)!r})\n'
+              "if not target.is_file():\n    print('{}')\n    sys.exit(0)\n"
+              'os.execv(sys.executable, [sys.executable, str(target), *sys.argv[1:]])\n')
+    restored = []
+    for version in versions:
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}', version):
+            raise RuntimeError('unsafe cache version')
+        target = root / version / 'scripts/boss.py'
+        if target.is_symlink() or any(p.is_symlink() for p in (root, root / version, target.parent)):
+            raise RuntimeError('hook compatibility target is symlinked')
+        if target.exists():
+            continue
+        write(target, bridge, 0o755)
+        restored.append(version)
+    return restored
+
+
+def repair_hooks(args: argparse.Namespace) -> int:
+    versions = remember_hook_versions(args.version)
+    restored = restore_hook_entries(versions)
+    print(json.dumps({'restored': restored, 'known_versions': versions}))
+    return 0
 
 
 def plugin_cli_install(name: str, distribution: Path) -> bool:
@@ -243,6 +314,7 @@ def install(args: argparse.Namespace) -> int:
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup = boss_home() / "backups" / f"install-{stamp}"
     boss_home().mkdir(parents=True, exist_ok=True)
+    hook_versions = remember_hook_versions()
     codex_config = home() / ".codex" / "config.toml"
     claude_settings = home() / ".claude" / "settings.json"
     backup_file(codex_config, backup)
@@ -264,7 +336,11 @@ def install(args: argparse.Namespace) -> int:
     cleaned = strip_codex_hooks(current, include_legacy=True)
     if cleaned != current:
         write(codex_config, cleaned)
-    codex_plugin = plugin_cli_install("codex", distribution)
+    try:
+        codex_plugin = plugin_cli_install("codex", distribution)
+    finally:
+        # Native CLI may have removed old versions even on a partial failure.
+        restore_hook_entries(hook_versions)
     if not codex_plugin:
         current_after_cli = codex_config.read_text(encoding="utf-8") if codex_config.exists() else ""
         fallback_base = strip_codex_hooks(current_after_cli, include_legacy=False)
@@ -386,6 +462,9 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--policy", choices=("quiet", "guarded", "strict"))
     add.add_argument("--owner")
     add.set_defaults(func=install)
+    repair = subs.add_parser('repair-hooks')
+    repair.add_argument('--version', action='append', default=[], help='explicitly reported retired Boss cache version')
+    repair.set_defaults(func=repair_hooks)
     remove = subs.add_parser("uninstall")
     remove.set_defaults(func=uninstall)
     restore = subs.add_parser("rollback")
