@@ -85,10 +85,29 @@ def backup_file(path: Path, backup: Path) -> None:
 
 
 def strip_codex_hooks(text: str, include_legacy: bool) -> str:
-    patterns = [UNIFIED_MARKER]
+    patterns = [UNIFIED_MARKER, '/.boss/distribution/plugins/boss-brain/scripts/boss.py']
     if include_legacy:
         patterns.extend(LEGACY_MARKERS)
-    lines = text.splitlines(keepends=True)
+    # Remove only explicit comment-delimited managed ranges. Marker-like text in
+    # native [hooks.state."plugin:hooks/..."] table names is not a range marker.
+    lines = []
+    inside = False
+    prefixes = ['boss-brain:hooks'] + (['boss:hooks', 'project-brains:hooks'] if include_legacy else [])
+    for line in text.splitlines(keepends=True):
+        if any(line.strip().startswith('# ' + prefix + ':begin') for prefix in prefixes):
+            if inside:
+                raise RuntimeError('nested managed hook ranges')
+            inside = True
+            continue
+        if any(line.strip() == '# ' + prefix + ':end' for prefix in prefixes):
+            if not inside:
+                raise RuntimeError('unmatched managed hook end')
+            inside = False
+            continue
+        if not inside:
+            lines.append(line)
+    if inside:
+        raise RuntimeError('unterminated managed hook range')
     output: list[str] = []
     top = re.compile(r"^\[\[hooks\.([A-Za-z]+)\]\]\s*$")
     header = re.compile(r"^\[")
@@ -109,9 +128,6 @@ def strip_codex_hooks(text: str, include_legacy: bool) -> str:
                 i = j
                 continue
         line = lines[i]
-        if "boss:hooks:" in line or "project-brains:hooks:" in line or UNIFIED_MARKER in line:
-            i += 1
-            continue
         output.append(line)
         i += 1
     return "".join(output).rstrip() + "\n"

@@ -242,6 +242,22 @@ class ContinuityV2Test(unittest.TestCase):
         self.assertNotEqual(rolled.returncode, 0)
         self.assertEqual(config.read_bytes(), expected)
 
+    def test_hook_cleanup_preserves_native_trust_tables_and_removes_fallback(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('fixture_installer', INSTALLER)
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        trusted = '[hooks.state."boss-brain@boss-brain:hooks/hooks.json:session_start:0:0"]\ntrusted_hash = "canary-one"\n\n'
+        trusted += '[hooks.state."boss-brain@boss-brain:hooks/hooks.json:stop:0:0"]\ntrusted_hash = "canary-two"\n\n'
+        fallback = installer.manual_codex_hooks(Path('/home/test/.boss/distribution/plugins/boss-brain/scripts/boss.py'))
+        cleaned = installer.strip_codex_hooks(trusted + fallback, True)
+        self.assertIn(trusted.rstrip(), cleaned)
+        self.assertNotIn('[[hooks.', cleaned)
+        self.assertEqual(cleaned.count('trusted_hash'), 2)
+        # Partial migration can leave unmarked runtime entries. Remove these too.
+        bare = fallback.replace('# boss-brain:hooks:begin (managed)\n', '').replace('# boss-brain:hooks:end\n', '')
+        self.assertNotIn('[[hooks.', installer.strip_codex_hooks(trusted + bare, True))
+
 
 if __name__ == '__main__':
     unittest.main()
