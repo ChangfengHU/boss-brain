@@ -2680,19 +2680,8 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
         if len(selected) > 6:
             parts.append('更多候选（未加载正文）：' + ', '.join(r['name'] for r in selected[6:16]))
         text = '\n'.join(parts)
-    # Auto-init only on an unmistakable work request, never SessionStart or read-only turns.
-    work_projects = set(focus.get('work_projects', []))
-    work = bool(work_projects) and bool(re.search(r'实现|修复|开发|重构|优化|修改|implement|fix|refactor|build', prompt, re.I))
-    if work and not readonly and session_mode(sid) == 'enabled' and config().get('continuity', {}).get('auto_brain'):
-        for row in selected:
-            if row['path'] in work_projects:
-                claim_root(sid, Path(row['path']))
-                try:
-                    result = continuity.brain_init(Path(row['path']), runtime_home())
-                    if result['status'] not in ('existing', 'skipped'):
-                        text += '\nBrain 接入：' + json.dumps(result, ensure_ascii=False)
-                except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-                    text += '\nBrain 接入未完成：' + str(exc)
+    # Initialization runs in the Agent's confirmed work binding, never from a
+    # lexical prompt match. A question about "fixing" does not authorize writes.
     budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
     text = redact_secrets(text)
     if len(text) > budget:

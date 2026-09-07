@@ -104,6 +104,9 @@ class ContinuityV2Test(unittest.TestCase):
         self.assertFalse((repo / '.brain').exists())
         self.boss('session', 'bind', 'work', '--task-id', 'TASK-1', '--project', 'alpha', '--access', 'work')
         self.assertTrue((repo / '.brain/manifest.json').exists())
+        (repo / '.brain/manifest.json').unlink()
+        self.hook(repo, 'Explain how to fix initialization', 'work')
+        self.assertFalse((repo / '.brain/manifest.json').exists())
 
     def test_multi_project_binding_preserves_constraints_on_auxiliary_workspace(self):
         first = self.registered('workflow')
