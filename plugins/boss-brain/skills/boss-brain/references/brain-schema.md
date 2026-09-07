@@ -4,6 +4,8 @@ Project memory lives in `.brain/` inside the repository unless `.brain-home` poi
 
 Create files only when verified information exists:
 
+- `manifest.json`: protocol version, normalized GitHub identity, content-review status and relative document locations. This basic inventory can be created automatically for authorized work on adopted projects; it is not a business-state verification. Paths must remain inside the owning repository. Existing `.brain-home` ownership requires separate review, not automatic reassignment.
+
 - `STATE.md`: a short current-state card with status, next action, blockers, critical paths, and current hazards.
 - `TASKS.md`: active/completed/deferred work. For drift protection, use stable IDs in active checkbox lines, for example `- [ ] [TASK-123] short title` or `- [ ] TASK-123: short title`; mark inferred historical status as unconfirmed.
 - `HANDOFF.md`: stable receiving protocol—what this is, assets and access locations, reading order, verification procedure, and hazards. Prefer commands for discovering current values over stale snapshots.

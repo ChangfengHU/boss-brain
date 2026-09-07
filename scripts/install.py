@@ -174,10 +174,40 @@ def configure_claude_fallback(script: Path, skill: Path, include_legacy: bool) -
     shutil.copytree(skill, target)
 
 
+def refresh_skill_entries(distribution: Path, backup: Path) -> None:
+    """Keep standalone entrypoints coherent even when native plugin loading succeeds."""
+    source = distribution / 'plugins/boss-brain/skills'
+    for tool in ('.codex', '.claude'):
+        for name in ('boss-brain', 'brain-init'):
+            target = home() / tool / 'skills' / name
+            if target.is_symlink():
+                raise RuntimeError(f'{tool} {name} is symlinked; review ownership before upgrade')
+            if target.exists():
+                saved = backup / 'skill-entries' / tool / name
+                if not saved.exists():
+                    shutil.copytree(target, saved)
+                shutil.rmtree(target)
+            shutil.copytree(source / name, target)
+
+
 def plugin_cli_install(name: str, distribution: Path) -> bool:
     if os.environ.get("BOSS_SKIP_PLUGIN_CLI") == "1" or not shutil.which(name):
         return False
     if name == "codex":
+        config_path = home() / '.codex/config.toml'
+        config_text = config_path.read_text(encoding='utf-8') if config_path.exists() else ''
+        market = re.search(r'(?ms)^\[marketplaces\.boss-brain\]\s*\n(.*?)(?=^\[|\Z)', config_text)
+        if market:
+            source = re.search(r'(?m)^source\s*=\s*("[^"\n]+")\s*$', market.group(1))
+            if not source:
+                raise RuntimeError('existing Boss marketplace source cannot be verified; refusing duplicate fallback hooks')
+            existing = Path(json.loads(source.group(1))).resolve()
+            if existing not in (repo_root().resolve(), distribution.resolve()):
+                raise RuntimeError('existing Boss marketplace points elsewhere; reconcile source before reinstall')
+            installed = run([name, 'plugin', 'add', 'boss-brain@boss-brain', '--json'])
+            if installed.returncode:
+                raise RuntimeError('native Boss reinstall failed; refusing simultaneous fallback hooks')
+            return True
         add_market = run([name, "plugin", "marketplace", "add", str(distribution), "--json"])
         if add_market.returncode != 0 and "already" not in (add_market.stdout + add_market.stderr).lower():
             return False
@@ -194,13 +224,20 @@ def plugin_cli_install(name: str, distribution: Path) -> bool:
 
 
 def install(args: argparse.Namespace) -> int:
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup = boss_home() / "backups" / f"install-{stamp}"
     boss_home().mkdir(parents=True, exist_ok=True)
     codex_config = home() / ".codex" / "config.toml"
     claude_settings = home() / ".claude" / "settings.json"
     backup_file(codex_config, backup)
     backup_file(claude_settings, backup)
+    for tool in ('.codex', '.claude'):
+        for name in ('boss-brain', 'brain-init'):
+            entry = home() / tool / 'skills' / name
+            if entry.is_symlink():
+                raise RuntimeError('skill entry is symlinked; installation refused before mutation')
+            if entry.exists():
+                shutil.copytree(entry, backup / 'skill-entries' / tool / name)
     distribution = copy_distribution(backup)
     script = distribution / "plugins" / "boss-brain" / "scripts" / "boss.py"
     skill = distribution / "plugins" / "boss-brain" / "skills" / "boss-brain"
@@ -225,15 +262,23 @@ def install(args: argparse.Namespace) -> int:
     if not claude_plugin:
         configure_claude_fallback(script, skill, include_legacy=True)
 
-    migrate = run([sys.executable, str(script), "migrate", "--policy", args.policy])
+    migrate_args = [sys.executable, str(script), 'migrate']
+    if args.policy:
+        migrate_args.extend(['--policy', args.policy])
+    migrate = run(migrate_args)
     if migrate.returncode != 0:
         print("migration failed", file=sys.stderr)
         return 1
     if args.owner:
         write(boss_home() / "owner", args.owner.strip() + "\n")
+    refresh_skill_entries(distribution, backup)
+    import hashlib
+    post = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (codex_config, claude_settings) if p.exists()}
+    write(backup / 'post-config.json', json.dumps(post))
     print(f"installed Boss Brain 0.1.0; backup={backup}")
     print(f"codex={'plugin' if codex_plugin else 'fallback'} claude={'plugin' if claude_plugin else 'fallback'}")
     print("existing ~/.boss data and all project .brain directories were preserved")
+    print('Run boss init --dry-run, then boss init to enable global directives and adopted-project continuity v2.')
     return 0
 
 
@@ -253,13 +298,25 @@ def strip_claude_unified() -> None:
 
 
 def uninstall(_args: argparse.Namespace) -> int:
+    module_dir = boss_home() / 'distribution/plugins/boss-brain/scripts'
+    if (module_dir / 'continuity.py').exists():
+        sys.path.insert(0, str(module_dir))
+        import continuity
+        preview = continuity.manage_rules(home(), boss_home(), dry_run=True, restore=True)
+        if any(item['status'] == 'blocked' for item in preview):
+            print('global rules changed; refusing uninstall until conflict is reviewed', file=sys.stderr)
+            return 2
+        results = continuity.manage_rules(home(), boss_home(), restore=True)
+        if any(item['status'] == 'blocked' for item in results):
+            return 2
     run(["codex", "plugin", "remove", "boss-brain@boss-brain", "--json"])
     run(["claude", "plugin", "uninstall", "boss-brain@boss-brain"])
     codex_config = home() / ".codex" / "config.toml"
     if codex_config.exists():
         write(codex_config, strip_codex_hooks(codex_config.read_text(encoding="utf-8"), include_legacy=False))
     strip_claude_unified()
-    for path in (home() / ".codex" / "skills" / "boss-brain", home() / ".claude" / "skills" / "boss-brain", boss_home() / "distribution"):
+    for path in (home() / ".codex" / "skills" / "boss-brain", home() / ".claude" / "skills" / "boss-brain",
+                 home() / '.codex/skills/brain-init', home() / '.claude/skills/brain-init', boss_home() / "distribution"):
         if path.exists():
             shutil.rmtree(path)
     wrapper = home() / ".local" / "bin" / "boss"
@@ -276,12 +333,32 @@ def rollback(_args: argparse.Namespace) -> int:
         print("no install backup found", file=sys.stderr)
         return 2
     backup = backups[0]
-    uninstall(_args)
+    import hashlib
+    post_file = backup / 'post-config.json'
+    if post_file.exists():
+        for name, expected in json.loads(post_file.read_text()).items():
+            path = Path(name)
+            if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                print('configuration changed after install; rollback refused without overwriting user changes', file=sys.stderr)
+                return 2
+    if uninstall(_args):
+        return 2
     for name, target in (("config.toml", home() / ".codex" / "config.toml"), ("settings.json", home() / ".claude" / "settings.json")):
         source = backup / name
         if source.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+    if (backup / 'distribution').exists():
+        shutil.copytree(backup / 'distribution', boss_home() / 'distribution')
+        script = boss_home() / 'distribution/plugins/boss-brain/scripts/boss.py'
+        write(home() / '.local/bin/boss', f'#!/bin/sh\nexec {sys.executable} "{script}" "$@"\n', 0o755)
+    entries = backup / 'skill-entries'
+    if entries.exists():
+        for tool in ('.codex', '.claude'):
+            for name in ('boss-brain', 'brain-init'):
+                source = entries / tool / name
+                if source.exists():
+                    shutil.copytree(source, home() / tool / 'skills' / name)
     print(f"configuration restored from {backup}; ~/.boss data preserved")
     return 0
 
@@ -290,7 +367,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     subs = result.add_subparsers(dest="command", required=True)
     add = subs.add_parser("install")
-    add.add_argument("--policy", choices=("quiet", "guarded", "strict"), default="quiet")
+    add.add_argument("--policy", choices=("quiet", "guarded", "strict"))
     add.add_argument("--owner")
     add.set_defaults(func=install)
     remove = subs.add_parser("uninstall")

@@ -1,5 +1,9 @@
 # Context observability
 
+After `boss init`, protocol v2 emits multi-project selection traces instead of single-project
+switch receipts. Use `boss explain --session ID --json`/`--show` for project sets, task, fingerprint
+and bounded context. The routing/receipt modes below document the retained legacy path.
+
 Boss records routing decisions per session so an incorrect decision is observable even when no context was injected. The trace is append-only JSONL under the Boss runtime state and contains redacted metadata, never the original prompt or secret values.
 
 ## Observation points

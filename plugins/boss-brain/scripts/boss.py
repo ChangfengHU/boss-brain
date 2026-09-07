@@ -27,6 +27,9 @@ import tempfile
 import time
 from typing import Any, Iterable
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import continuity
+
 
 VERSION = "0.1.0"
 SCHEMA_VERSION = 1
@@ -410,7 +413,7 @@ def cap_text(text: str, limit: int = 4200) -> str:
 
 
 def active_tasks(brain: Path) -> list[str]:
-    path = brain / "TASKS.md"
+    path = continuity.document(brain.parent, 'tasks')
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -423,7 +426,7 @@ def active_tasks(brain: Path) -> list[str]:
 
 def task_records(brain: Path) -> list[dict[str, str | bool]]:
     """Read stable task IDs while preserving compatibility with legacy task lines."""
-    path = brain / "TASKS.md"
+    path = continuity.document(brain.parent, 'tasks')
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -519,7 +522,7 @@ def goal_match_score(prompt: str, goal: str) -> tuple[float, list[str]]:
 def legacy_task_goals(brain: Path) -> list[str]:
     """Return active task text that has no stable ID for goal-level matching."""
     try:
-        lines = (brain / "TASKS.md").read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = continuity.document(brain.parent, 'tasks').read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return []
     result: list[str] = []
@@ -551,7 +554,7 @@ def project_context(row: dict[str, str], explicit: bool = True) -> str:
     ]
     if row["summary"]:
         lines.append(f"定位：{row['summary']}")
-    state = brain / "STATE.md"
+    state = continuity.document(root, 'state')
     if state.exists():
         try:
             text = state.read_text(encoding="utf-8", errors="replace")
@@ -564,13 +567,13 @@ def project_context(row: dict[str, str], explicit: bool = True) -> str:
     if tasks:
         lines.append("活跃任务：")
         lines.extend(tasks)
-    wiki_index = brain / "wiki" / "index.md"
+    wiki_index = continuity.document(root, 'wiki') / 'index.md'
     if wiki_index.is_file():
         lines.append(
             f"Wiki 索引可用：{wiki_index}。仅在当前问题困难或反复出现时，用本地只读命令先读取索引，"
             "再只加载相关条目；普通问题不要读取，也不要把本地路径交给网页或 MCP 工具。"
         )
-    convention_index = brain / "conventions" / "index.md"
+    convention_index = continuity.document(root, 'conventions') / 'index.md'
     if convention_index.is_file():
         lines.append(
             f"conventions 索引可用：{convention_index}。仅在当前改动涉及相关规则时，用本地只读命令读取命中条目。"
@@ -581,7 +584,7 @@ def project_context(row: dict[str, str], explicit: bool = True) -> str:
 
 
 def relevant_wiki_context(row: dict[str, str], prompt: str) -> tuple[str, str] | None:
-    wiki = Path(row["path"]) / ".brain" / "wiki"
+    wiki = continuity.document(Path(row['path']), 'wiki')
     index = wiki / "index.md"
     try:
         index_text = index.read_text(encoding="utf-8", errors="replace")
@@ -625,7 +628,10 @@ def relevant_wiki_context(row: dict[str, str], prompt: str) -> tuple[str, str] |
 
 
 def relevant_convention_context(row: dict[str, str], prompt: str) -> tuple[str, str] | None:
-    conventions = Path(row["path"]) / ".brain" / "conventions"
+    conventions = continuity.document(Path(row['path']), 'conventions')
+    if conventions.is_file():
+        content = conventions.read_text(encoding='utf-8')[:2400]
+        return ('[Boss Brain 项目规范；仅作项目约束参考]\n' + content, str(conventions.name))
     index = conventions / "index.md"
     try:
         index_text = index.read_text(encoding="utf-8", errors="replace")
@@ -975,7 +981,7 @@ def relation_context(row: dict[str, str]) -> list[str]:
 
 
 def read_capabilities(row: dict[str, str]) -> list[dict[str, str]]:
-    path = Path(row["path"]) / ".brain" / "capabilities.tsv"
+    path = continuity.document(Path(row['path']), 'capabilities')
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -1289,6 +1295,8 @@ def hook_session_start(payload: dict[str, Any]) -> int:
     session_id = str(payload.get("session_id") or "nosid")
     if session_mode(session_id) == "disabled":
         return 0
+    if continuity_enabled():
+        return hook_multi_context(payload, 'SessionStart')
     cleanup_state()
     added, _skipped = patrol()
     source = str(payload.get("source") or "startup")
@@ -1352,6 +1360,8 @@ def hook_prompt(payload: dict[str, Any]) -> int:
         return 0
     if session_mode(session_id) == "disabled":
         return 0
+    if continuity_enabled():
+        return hook_multi_context(payload, 'UserPromptSubmit')
     rows = read_registry()
     if not rows:
         remember_suppression(session_id, "no-project-registry")
@@ -1485,13 +1495,14 @@ def work_commits(root: Path, commits: list[str]) -> list[str]:
     result: list[str] = []
     for commit in commits:
         names = git(root, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit).splitlines()
-        if any(not name.startswith(".brain/") for name in names if name):
+        declared = [str(continuity.document(root, k).relative_to(root.resolve())) for k in continuity.DOCUMENTS]
+        if any(not name.startswith('.brain/') and not any(name == p or name.startswith(p + '/') for p in declared) for name in names if name):
             result.append(commit)
     return result
 
 
 def newest_evidence(brain: Path) -> tuple[dict[str, Any] | None, set[str]]:
-    files = [brain / "evidence.jsonl", *sorted((brain / "tasks").glob("*/evidence.jsonl"))]
+    files = [continuity.document(brain.parent, 'evidence'), *sorted((brain / "tasks").glob("*/evidence.jsonl"))]
     newest: tuple[float, dict[str, Any]] | None = None
     commits: set[str] = set()
     for path in files:
@@ -1551,13 +1562,15 @@ def audit_repo(root: Path, baseline: str, policy: str, active_task: str = "") ->
             findings.append({"code": "task-context", "level": "continuity", "message": f"{root} 有稳定任务 ID，但本会话没有确认当前任务。"})
         elif not evidence or str(evidence.get("task_id") or "").lower() != active_task.lower():
             findings.append({"code": "task-evidence", "level": "continuity", "message": f"{root} 最新证据没有记录当前任务 {active_task}。"})
-    changed = set(git(root, "diff", "--name-only", f"{baseline}..HEAD", "--", ".brain").splitlines())
-    if ".brain/STATE.md" not in changed:
+    changed = set(git(root, "diff", "--name-only", f"{baseline}..HEAD").splitlines())
+    state_path = str(continuity.document(root, 'state').relative_to(root.resolve()))
+    log_path = str(continuity.document(root, 'dev_log').relative_to(root.resolve()))
+    if state_path not in changed:
         findings.append({"code": "state", "level": "continuity", "message": f"{root} 有新工作提交，但 STATE.md 未随本会话更新。"})
-    if not any(name.startswith(".brain/dev-log/") for name in changed):
+    if not any(name == log_path or name.startswith(log_path + '/') for name in changed):
         findings.append({"code": "dev-log", "level": "continuity", "message": f"{root} 有新工作提交，但没有本会话 dev-log。"})
     if policy == "strict":
-        caps = brain / "capabilities.tsv"
+        caps = continuity.document(root, 'capabilities')
         if not caps.exists():
             findings.append({"code": "capabilities", "level": "strict", "message": f"{root} 缺少 .brain/capabilities.tsv。"})
         else:
@@ -1655,7 +1668,30 @@ def cmd_hook(args: argparse.Namespace) -> int:
 
 
 def knowledge_pending(session_id: str) -> list[dict[str, Any]]:
-    return [item for item in load_session(session_id).get("knowledge_reviews", []) if item["status"] == "pending"]
+    return [item for item in knowledge_reviews(session_id) if item['status'] == 'pending']
+
+
+def knowledge_record_path(item: dict[str, Any]) -> Path:
+    return runtime_home() / 'knowledge' / continuity.digest(item['project']) / (item['id'] + '.json')
+
+
+def knowledge_reviews(session_id: str) -> list[dict[str, Any]]:
+    value = load_session(session_id)
+    reviews = {item['id']: item for item in value.get('knowledge_reviews', [])}
+    if continuity_enabled():
+        projects = set(value.get('roots', {})) | set(value.get('context_projects', []))
+        projects |= {p for c in value.get('contracts', {}).values() for p in c.get('projects', [])}
+        for project in projects:
+            folder = runtime_home() / 'knowledge' / continuity.digest(project)
+            for path in sorted(folder.glob('*.json'))[:100]:
+                item = read_json(path, {})
+                if item.get('project') == project and item.get('id'):
+                    reviews[item['id']] = item
+        for rid, item in list(reviews.items()):
+            stored = read_json(knowledge_record_path(item), {})
+            if stored.get('id') == rid:
+                reviews[rid] = stored
+    return list(reviews.values())
 
 
 def knowledge_context(session_id: str, pending: list[dict[str, Any]]) -> str:
@@ -1667,13 +1703,15 @@ def knowledge_context(session_id: str, pending: list[dict[str, Any]]) -> str:
         "已授权的关键文档修正不以业务代码 commit 为前提；普通问答不写日志。"
         "禁止写入/仅讨论的用户约束优先，必要时保留 pending 或标 deferred。"
         "应修正原权威文档而非追加互相矛盾的副本；其他项目内容不能写入当前仓库。"
+        "新版启用关键知识自动沉淀时，由 Agent 核实后保存到原项目规范/wiki；Hook 不生成业务事实。"
         f"用 boss knowledge list --session {shlex.quote(session_id)} 查看；"
         "更新后用 knowledge resolve --status updated --file <已修改文档> 关闭，"
         "误触发用 dismissed，禁止写入用 deferred；结束时如仍未同步须明确告知用户。"
     )
 
 
-def knowledge_register(session_id: str, root: Path, trigger: str, identity: str) -> None:
+def knowledge_register(session_id: str, root: Path, trigger: str, identity: str,
+                       summary: str = '', kind: str = 'candidate', source: str = '') -> None:
     root = root.resolve()
     value = load_session(session_id)
     reviews = value.setdefault("knowledge_reviews", [])
@@ -1684,21 +1722,40 @@ def knowledge_register(session_id: str, root: Path, trigger: str, identity: str)
     files = {}
     for relative in git(root, "ls-files").splitlines():
         path = root / relative
-        if path.suffix == ".md" and not path.is_symlink() and path.is_file():
+        if len(files) >= 256:
+            break
+        if path.suffix == ".md" and not path.is_symlink() and path.is_file() and path.stat().st_size <= 256000:
             files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
-    reviews.append({"id": rid, "project": str(root), "trigger": trigger,
-                    "status": "pending", "created_at": now_iso(), "files": files})
+    item = {"id": rid, "project": str(root), "trigger": trigger,
+            "status": "pending", "created_at": now_iso(), "files": files}
+    if continuity_enabled():
+        item.update({'summary': summary, 'kind': kind, 'source': source,
+                     'origin_session': session_id, 'verification': 'candidate; agent review required'})
+        path = knowledge_record_path(item)
+        with continuity.lock(runtime_home() / 'locks' / ('knowledge-' + rid + '.lock')):
+            existing = read_json(path, {})
+            if existing:
+                item = existing
+            else:
+                write_json(path, item)
+    reviews.append(item)
     save_session(session_id, value)
 
 
 def knowledge_prompt(payload: dict[str, Any]) -> None:
     prompt = str(payload.get("prompt") or "")
+    if continuity_enabled() and no_write_prompt(prompt):
+        return
     correction = re.search(r"(你没|没有弄清|不对|纠正|不是|correction|incorrect|actually)", prompt, re.I)
     domain = re.search(r"(架构|数据源|开发机器|开发方式|发布|版本|关系|规范|architecture|release|deployment)", prompt, re.I)
     explicit_memory = re.search(r"(记下来|沉淀到|同步到.*文档|update.*(?:architecture|runbook))", prompt, re.I)
     if not (correction and domain or explicit_memory):
         return
     rows = read_registry()
+    if continuity_enabled():
+        candidates = [r for r in rows if explicit_project(prompt, [r]) or alias_project(prompt, [r])]
+        if len(candidates) > 1:
+            return  # Agent must choose the fact owner; never pick the first mentioned project.
     explicit = explicit_project(prompt, rows)
     root = Path(explicit["path"]) if explicit else git_root(Path(str(payload.get("cwd") or os.getcwd())))
     if not root:
@@ -1710,14 +1767,25 @@ def knowledge_prompt(payload: dict[str, Any]) -> None:
 
 def cmd_knowledge(args: argparse.Namespace) -> int:
     if args.action == "flag":
+        if continuity_enabled() and (session_mode(args.session) != 'enabled' or load_session(args.session).get('no_write_turn')):
+            print('knowledge writes disabled for this session/turn', file=sys.stderr)
+            return 2
         root = git_root(Path(args.path))
         if not root:
             print("knowledge flag requires a Git workspace", file=sys.stderr)
             return 2
-        knowledge_register(args.session, root, "agent-verified-discovery", args.key)
+        metadata = '\n'.join([args.summary, args.source])
+        if len(metadata) > 3000 or redact_secrets(metadata) != metadata:
+            print('knowledge metadata is oversized or contains a secret', file=sys.stderr)
+            return 2
+        knowledge_register(args.session, root, "agent-discovery-candidate", args.key,
+                           args.summary, args.kind, args.source)
     elif args.action == "resolve":
+        if continuity_enabled() and (session_mode(args.session) != 'enabled' or load_session(args.session).get('no_write_turn')):
+            print('knowledge writes disabled for this session/turn', file=sys.stderr)
+            return 2
         value = load_session(args.session)
-        item = next((r for r in value.get("knowledge_reviews", []) if r["id"] == args.id), None)
+        item = next((r for r in knowledge_reviews(args.session) if r["id"] == args.id), None)
         if not item or item["status"] != "pending":
             print("pending knowledge review not found", file=sys.stderr)
             return 2
@@ -1735,8 +1803,18 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
             item["evidence"] = {"file": relative, "sha256": digest}
         item["status"] = args.status
         item["resolved_at"] = now_iso()
+        if continuity_enabled():
+            record = knowledge_record_path(item)
+            with continuity.lock(runtime_home() / 'locks' / ('knowledge-' + item['id'] + '.lock')):
+                existing = read_json(record, {})
+                if existing and existing.get('status') != 'pending':
+                    print('review already resolved by another session', file=sys.stderr)
+                    return 2
+                write_json(record, item)
+        reviews = value.setdefault('knowledge_reviews', [])
+        value['knowledge_reviews'] = [r for r in reviews if r['id'] != item['id']] + [item]
         save_session(args.session, value)
-    print(redact_secrets(json.dumps(load_session(args.session).get("knowledge_reviews", []), ensure_ascii=False)))
+    print(redact_secrets(json.dumps(knowledge_reviews(args.session), ensure_ascii=False)))
     return 0
 
 
@@ -2296,8 +2374,8 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     if registry.count("\n") > 1:
         atomic_write(target / "registry.tsv", registry)
     cfg = config()
-    if (home / ".boss").exists() or (home / ".project-brains").exists():
-        cfg["policy"] = args.policy or "strict"
+    if args.policy:
+        cfg['policy'] = args.policy
     write_json(target / "config.json", cfg)
     write_json(target / "migration.json", {"at": now_iso(), "from": [".project-brains"], "backup": str(backup)})
     print(f"migrated in place at {target}; project brains preserved; credentials skipped")
@@ -2417,6 +2495,8 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         return 2
     rows = read_registry()
     if any(Path(row["path"]).resolve() == root for row in rows):
+        if continuity_enabled():
+            return print_brain_result(root)
         print(f"already managed: {root}")
         return 0
     name = args.name or root.name
@@ -2428,7 +2508,210 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     path = runtime_home() / "registry.tsv"
     existing = merge_registry([registry_path()]).rstrip("\n")
     atomic_write(path, existing + "\n" + line + "\n")
+    if continuity_enabled():
+        return print_brain_result(root)
     print(f"adopted {name}: {root}")
+    return 0
+
+
+def continuity_enabled() -> bool:
+    return config().get('continuity', {}).get('enabled') is True
+
+
+def print_brain_result(root: Path, dry_run: bool = False) -> int:
+    try:
+        result = continuity.brain_init(root, runtime_home(), dry_run=dry_run)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result['status'] in ('initialized', 'existing', 'would-initialize') else 1
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        print(json.dumps({'status': 'blocked', 'reason': redact_secrets(str(exc))}))
+        return 1
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    rules = continuity.manage_rules(Path.home(), runtime_home(), dry_run=args.dry_run)
+    failed = any(item['status'] == 'blocked' for item in rules)
+    projects = []
+    if not args.rules_only and not failed:
+        rows = read_registry()
+        wanted = {str(Path(p).resolve()) for p in args.project} if args.project else None
+        if wanted and not wanted.issubset({str(Path(r['path']).resolve()) for r in rows}):
+            print('project must be adopted before initialization', file=sys.stderr)
+            return 2
+        for row in rows:
+            root = Path(row['path'])
+            if wanted and str(root.resolve()) not in wanted:
+                continue
+            try:
+                result = continuity.brain_init(root, runtime_home(), dry_run=args.dry_run)
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                result = {'project': str(root), 'status': 'blocked', 'reason': redact_secrets(str(exc))}
+            projects.append(result)
+            failed |= result['status'] in ('blocked', 'delegated')
+    if not args.dry_run and not any(item['status'] == 'blocked' for item in rules):
+        cfg = config()
+        cfg['continuity'] = {**cfg.get('continuity', {}), 'enabled': True,
+                             'auto_brain': True, 'critical_knowledge': True}
+        write_json(runtime_home() / 'config.json', cfg)
+    print(json.dumps({'schema': 2, 'dry_run': args.dry_run, 'rules': rules,
+                      'projects': projects, 'status': 'partial' if failed else 'configured',
+                      'verification': 'files only; host loading requires real session test'}, ensure_ascii=False))
+    return 1 if failed else 0
+
+
+def cmd_brain_init(args: argparse.Namespace) -> int:
+    root = git_root(args.path)
+    if not root or not any(Path(r['path']).resolve() == root for r in read_registry()):
+        print('adopt this Git project first; no files changed', file=sys.stderr)
+        return 2
+    return print_brain_result(root, args.dry_run)
+
+
+def cmd_session_bind(args: argparse.Namespace) -> int:
+    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,63}', args.task_id) or not safe_record_field(args.task_id):
+        print('task ID must be a short non-secret identifier', file=sys.stderr)
+        return 2
+    if session_mode(args.session_id) != 'enabled':
+        print('binding requires an enabled session', file=sys.stderr)
+        return 2
+    if args.access == 'work' and load_session(args.session_id).get('no_write_turn'):
+        print('current turn is read-only; work binding refused', file=sys.stderr)
+        return 2
+    rows = read_registry()
+    selected = []
+    for name in args.project:
+        matches = [r for r in rows if name in row_names(r) or Path(name).resolve() == Path(r['path']).resolve()]
+        if len(matches) != 1:
+            print('project is unknown or ambiguous', file=sys.stderr)
+            return 2
+        selected.append(matches[0])
+    text = '\n'.join([args.goal or '', *args.constraint])
+    if len(text) > 4000 or redact_secrets(text) != text:
+        print('goal/constraints exceed size limit or contain a secret', file=sys.stderr)
+        return 2
+    with continuity.lock(runtime_home() / 'locks' / ('session-' + continuity.digest(args.session_id) + '.lock')):
+        value = load_session(args.session_id)
+        contracts = value.setdefault('contracts', {})
+        previous = contracts.get(args.task_id, {})
+        contract = {**previous, 'goal': args.goal or previous.get('goal', ''),
+                    'constraints': list(dict.fromkeys([*([] if args.replace_constraints else previous.get('constraints', [])), *args.constraint])),
+                    'projects': list(dict.fromkeys([*previous.get('projects', []), *[r['path'] for r in selected]])),
+                    'source': 'agent-confirmed-user-intent', 'updated_at': now_iso()}
+        contract['work_projects'] = list(dict.fromkeys([*previous.get('work_projects', []),
+            *([r['path'] for r in selected] if args.access == 'work' else [])]))
+        if len(json.dumps(contract, ensure_ascii=False)) > 8000:
+            print('task contract too large; summarize confirmed constraints', file=sys.stderr)
+            return 2
+        contracts[args.task_id] = contract
+        value['focus_task'] = args.task_id
+        value['last_multi_digest'] = ''
+        save_session(args.session_id, value)
+    initialization = []
+    if args.access == 'work':
+        for row in selected:
+            claim_root(args.session_id, Path(row['path']))
+            if continuity_enabled():
+                initialization.append(continuity.brain_init(Path(row['path']), runtime_home()))
+    print(json.dumps({'task': args.task_id, 'projects': [r['name'] for r in selected],
+                      'access': args.access, 'status': 'bound', 'initialization': initialization}, ensure_ascii=False))
+    return 1 if any(r['status'] not in ('existing', 'initialized') for r in initialization) else 0
+
+
+def no_write_prompt(prompt: str) -> bool:
+    return bool(re.search(r'只读|仅讨论|只讨论|不要修改|不修改|不记录|不要记录|不要写|不写入|read.only|do not (?:write|modify|record)', prompt, re.I))
+
+
+def hook_multi_context(payload: dict[str, Any], event: str) -> int:
+    sid = str(payload.get('session_id') or 'nosid')
+    prompt = str(payload.get('prompt') or '')
+    value = load_session(sid)
+    readonly = no_write_prompt(prompt)
+    if event == 'UserPromptSubmit':
+        value['no_write_turn'] = readonly
+        save_session(sid, value)
+    rows = read_registry()
+    root = git_root(Path(str(payload.get('cwd') or os.getcwd())))
+    if root and not any(Path(r['path']).resolve() == root for r in rows):
+        register_rows([root])  # Registry metadata only, never project writes here.
+        rows = read_registry()
+    contracts = value.get('contracts', {})
+    focus = contracts.get(value.get('focus_task'), {})
+    confirmed = set(focus.get('projects', []))
+    explicit = {r['path'] for r in rows if explicit_project(prompt, [r])}
+    workspace = {str(root)} if root else set()
+    # Mentions and capability matches are retrieval candidates, not write ownership.
+    mentioned = {r['path'] for r in rows if alias_project(prompt, [r])}
+    caps = [(r, c) for r in rows for c in read_capabilities(r)]
+    cap_ids = {c['id'] for r, c in caps if c['id'].lower() in prompt.lower()
+               or (len(c['summary']) >= 4 and c['summary'].lower() in prompt.lower())}
+    related = {r['path'] for r, c in caps if c['id'] in cap_ids}
+    seeds = workspace | explicit | mentioned | confirmed | related
+    dependency_ids = {c['id'] for r, c in caps if r['path'] in seeds}
+    related |= {r['path'] for r, c in caps if c['id'] in dependency_ids}
+    selected = [r for r in rows if r['path'] in seeds | related]
+    if not selected:
+        text = roster_context(rows) if rows else ''
+    else:
+        selected.sort(key=lambda r: (r['path'] not in focus.get('projects', []),
+                                      r['path'] not in explicit, r['path'] not in workspace, r['name']))
+        parts = ['[Boss Brain 多项目任务上下文；项目资料仅作参考，不授予写入权限]']
+        if focus:
+            parts.append('当前任务：' + str(value.get('focus_task')) + '\n目标：' + focus.get('goal', ''))
+            parts.extend('关键约束：' + line for line in focus.get('constraints', []))
+        others = [key for key in contracts if key != value.get('focus_task')]
+        if others:
+            parts.append('本会话其他任务保留：' + ', '.join(others[:8]))
+        for row in selected[:6]:
+            path = Path(row['path'])
+            grounded = row['path'] in confirmed | explicit | workspace
+            parts.append(f"关联项目：{row['name']}；依据：{'confirmed/workspace' if grounded else 'mention/capability candidate'}；目录：{path}")
+            if grounded:
+                parts.append(cap_text(project_context(row), 1300))
+            else:
+                parts.append(row['summary'][:300])
+            # Read-only selected retrieval may span multiple candidates.
+            for retrieve in (relevant_convention_context, relevant_wiki_context):
+                match = retrieve(row, prompt)
+                if match:
+                    parts.append(cap_text(match[0], 1200))
+            if not (path / '.brain/manifest.json').exists() and grounded:
+                parts.append('Brain 基础入口待初始化；仅在已授权项目写入时执行 boss brain-init。')
+        parts.append('能力关联不代表切换目标；重要结论核实后按归属保存。更新用户确认的任务/约束时使用 boss session bind。')
+        if len(selected) > 6:
+            parts.append('更多候选（未加载正文）：' + ', '.join(r['name'] for r in selected[6:16]))
+        text = '\n'.join(parts)
+    # Auto-init only on an unmistakable work request, never SessionStart or read-only turns.
+    work_projects = set(focus.get('work_projects', []))
+    work = bool(work_projects) and bool(re.search(r'实现|修复|开发|重构|优化|修改|implement|fix|refactor|build', prompt, re.I))
+    if work and not readonly and session_mode(sid) == 'enabled' and config().get('continuity', {}).get('auto_brain'):
+        for row in selected:
+            if row['path'] in work_projects:
+                claim_root(sid, Path(row['path']))
+                try:
+                    result = continuity.brain_init(Path(row['path']), runtime_home())
+                    if result['status'] not in ('existing', 'skipped'):
+                        text += '\nBrain 接入：' + json.dumps(result, ensure_ascii=False)
+                except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                    text += '\nBrain 接入未完成：' + str(exc)
+    budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
+    text = redact_secrets(text)
+    if len(text) > budget:
+        text = text[:budget - 40] + '\n[达到上下文预算；其余资料按需读取]'
+    fingerprint = continuity.digest(text)
+    value = load_session(sid)
+    repeated = value.get('last_multi_digest') == fingerprint and event != 'SessionStart'
+    value['last_multi_digest'] = fingerprint
+    value['context_projects'] = [r['path'] for r in selected]
+    value['last_context'] = {'schema': 3, 'session': sid, 'mode': 'multi-project', 'event': event,
+                             'projects': [r['name'] for r in selected], 'task': value.get('focus_task'),
+                             'chars': 0 if repeated else len(text), 'sha256': fingerprint,
+                             'injection': {'performed': not repeated, 'reason': 'duplicate' if repeated else 'relevant-projects'}}
+    save_session(sid, value)
+    append_trace(sid, value['last_context'])
+    write_json(state_home() / 'last-context.json', value['last_context'])
+    atomic_write(preview_file(sid), text + '\n')
+    if not repeated:
+        session_hook_output(sid, event, text)
     return 0
 
 
@@ -2436,6 +2719,15 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="boss", description="Machine control and portable project continuity")
     result.add_argument("--version", action="version", version=f"boss {VERSION}")
     subs = result.add_subparsers(dest="command", required=True)
+    init = subs.add_parser('init')
+    init.add_argument('--dry-run', action='store_true')
+    init.add_argument('--rules-only', action='store_true')
+    init.add_argument('--project', action='append', default=[])
+    init.set_defaults(func=cmd_init)
+    brain_init = subs.add_parser('brain-init')
+    brain_init.add_argument('path', nargs='?', default='.')
+    brain_init.add_argument('--dry-run', action='store_true')
+    brain_init.set_defaults(func=cmd_brain_init)
     knowledge = subs.add_parser("knowledge")
     knowledge_subs = knowledge.add_subparsers(dest="action", required=True)
     for action in ("list", "flag", "resolve"):
@@ -2444,6 +2736,9 @@ def parser() -> argparse.ArgumentParser:
         if action == "flag":
             item.add_argument("--path", default=".")
             item.add_argument("--key", required=True)
+            item.add_argument('--summary', default='')
+            item.add_argument('--kind', choices=('candidate', 'decision', 'lesson', 'fact'), default='candidate')
+            item.add_argument('--source', default='')
         if action == "resolve":
             item.add_argument("--id", required=True)
             item.add_argument("--status", required=True, choices=("updated", "deferred", "dismissed"))
@@ -2522,6 +2817,15 @@ def parser() -> argparse.ArgumentParser:
     receipt.set_defaults(func=cmd_receipt)
     session = subs.add_parser("session")
     session_subs = session.add_subparsers(dest="session_command", required=True)
+    binding = session_subs.add_parser('bind')
+    binding.add_argument('session_id')
+    binding.add_argument('--task-id', required=True)
+    binding.add_argument('--goal')
+    binding.add_argument('--constraint', action='append', default=[])
+    binding.add_argument('--replace-constraints', action='store_true', help='replace only after user-confirmed revision')
+    binding.add_argument('--project', action='append', required=True)
+    binding.add_argument('--access', choices=('read', 'work'), default='read')
+    binding.set_defaults(func=cmd_session_bind)
     session_mode_parser = session_subs.add_parser("mode")
     session_mode_parser.add_argument("session_id")
     session_mode_parser.add_argument("value", nargs="?", choices=SESSION_MODES)
@@ -2541,7 +2845,19 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        if args.command == 'hook':
+            # Invalid project metadata must not crash the host or become write authority.
+            event = {'session-start': 'SessionStart', 'prompt-submit': 'UserPromptSubmit', 'stop': 'Stop'}[args.event]
+            if event == 'Stop':
+                print(json.dumps({'systemMessage': 'Boss Brain audit incomplete: local metadata needs review; do not claim continuity verified.'}))
+            else:
+                hook_output(event, '[Boss Brain] Context unavailable: local metadata needs review. Continue the user task without assuming project ownership; do not modify metadata to silence this warning.')
+            return 0
+        print('Boss Brain operation failed: ' + redact_secrets(str(exc)), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

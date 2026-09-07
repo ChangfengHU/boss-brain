@@ -21,7 +21,7 @@ Vault MCP ◄── key references only ── Boss / project Brain
 
 Boss owns the local registry, aliases, scan policy, session claims, audit results, cross-project capability view, and machine snapshot configuration. Its hooks are dependency-free, local-only, and bounded by short timeouts.
 
-Discovery is conservative. Automatic registration requires a recent non-empty repository whose GitHub owner matches `~/.boss/owner`. Foreign, stale, empty, remote-less, and name-conflicting repositories remain candidates. Registration never writes project memory.
+Discovery is conservative. Automatic registration requires a recent non-empty repository whose GitHub owner matches `~/.boss/owner`. Foreign, stale, empty, remote-less, and name-conflicting repositories remain candidates. Scanning never writes project memory. Protocol v2 initialization and explicit authorized-work bindings establish truthful basic entries for adopted GitHub projects; see [continuity v2](continuity-v2.md).
 
 ## Brain: project scope
 

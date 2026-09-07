@@ -1,5 +1,10 @@
 # Critical knowledge synchronization
 
+Protocol v2, enabled by `boss init`, extends this original session-only mechanism with
+private durable per-project reviews, summary/kind/source metadata and cross-session resolution.
+See [continuity v2](continuity-v2.md). The session-only limits below describe legacy mode;
+semantic validation and Git persistence still remain Agent responsibilities in both modes.
+
 Project knowledge can become stale without a business-code commit. A user correcting an architecture/release relationship, or an Agent discovering a different development host, should initiate a knowledge review rather than silently disappear after the answer.
 
 Prompt hooks detect a conservative set of correction/domain phrases and explicit memory requests. They create session-scoped pending metadata only when a Git cwd or explicit registered project establishes a candidate owner. No prompt body, generated fact or business document is persisted by the hook. The selected project is a candidate, not permission to write: cross-project discussions still require the Agent to verify ownership.
