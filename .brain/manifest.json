@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "repository": "ChangfengHU/boss-brain",
+  "content_status": "reviewed-with-explicit-limits",
+  "documents": {
+    "state": ".brain/STATE.md",
+    "tasks": ".brain/TASKS.md",
+    "handoff": ".brain/HANDOFF.md",
+    "evidence": ".brain/evidence.jsonl",
+    "dev_log": ".brain/dev-log",
+    "wiki": ".brain/wiki",
+    "conventions": ".brain/conventions",
+    "capabilities": ".brain/capabilities.tsv"
+  },
+  "pending": [
+    "Other adopted projects require owner-specific migration; real Claude/platform acceptance remains open."
+  ]
+}

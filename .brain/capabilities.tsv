@@ -1,0 +1,2 @@
+provides	boss.continuity	plugins/boss-brain/scripts/boss.py	Global rules, project entries, multi-project context and knowledge reviews
+consumes	git.repository	git CLI	Project identity, change evidence and source persistence
