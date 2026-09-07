@@ -2,6 +2,12 @@
 
 ## Current state
 
+Preservation repair `9aa7f9d` supersedes the earlier broad v2 acceptance claim.
+The twelve original user rules are restored verbatim in installed global directives.
+Twelve audited implementation/compatibility findings were addressed; see
+`docs/requirements-preservation-audit.md` for exact evidence and un-restored legacy
+receipt/patrol behavior. Do not call all legacy behavior fully preserved.
+
 Continuity protocol v2 is implemented and installed on the development host. The
 Codex native plugin and global directives are configured; legacy fallback Codex
 hooks are removed. Claude fallback files are installed but real Claude behavior
@@ -9,6 +15,11 @@ has not been accepted. Use `boss init --dry-run` to inspect other adopted projec
 this upgrade did not bulk-modify their documentation or business services.
 
 ## Verified behavior
+
+- Preservation suite: 108 tests passed, including 16 enabled-v2 preservation tests.
+  Real isolated native Codex loaded original thinking/code rules without tools,
+  read long multi-project state markers, resumed/corrected scope and persisted a
+  confirmed decision. Installed source equality and four retired Stop entries passed.
 
 - `93ff028`: user-confirmed task scope replacement, per-project context failure
   isolation and truthful partial initialization. All 92 deterministic tests passed.
