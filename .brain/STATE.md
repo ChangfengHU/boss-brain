@@ -19,6 +19,12 @@ this upgrade did not bulk-modify their documentation or business services.
 
 ## Next action
 
+Live-session cache-pruning regression repaired in `1e695fd`: missing Hook resources
+skip, and the installer preserves retired executable entrypoints. Both old Stop
+entrypoints and installed missing-path guards were tested on the development host.
+See `wiki/hook-migration.md`; use the installer for future upgrades so compatibility
+restoration runs. This repair does not add project-specific plugin switches.
+
 Use a new host thread to pick up revised skill definitions. For actual project
 work, bind the user-confirmed task and capabilities with `session bind`; initialize
 only its authorized owners. Track separate business work in its owning project.
