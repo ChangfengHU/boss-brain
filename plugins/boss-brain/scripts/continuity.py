@@ -178,6 +178,8 @@ def block_in(text: str) -> tuple[str, str]:
 
 def manage_rules(home: Path, runtime: Path, *, dry_run=False, restore=False) -> list[dict]:
     template = (ASSETS / 'global-directives.md').read_text(encoding='utf-8').strip()
+    if not restore and (ASSETS / 'legacy-directives.md').read_text(encoding='utf-8').strip() not in template:
+        return [{'status': 'blocked', 'reason': 'core user directives missing from template; no global rules changed'}]
     desired = BEGIN + '\n' + template + '\n' + END
     codex = Path(os.environ.get('CODEX_HOME', str(home / '.codex')))
     targets = [codex / 'AGENTS.md']

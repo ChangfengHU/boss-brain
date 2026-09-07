@@ -28,7 +28,8 @@ def main():
         (cfg / 'auth.json').chmod(0o600)
         env = {**os.environ, 'HOME': str(home), 'CODEX_HOME': str(cfg),
                'BOSS_HOME': str(home / '.boss'), 'BOSSBRAIN_STATE_DIR': str(home / '.boss/state'),
-               'BOSS_SKIP_PLUGIN_CLI': '1', 'PATH': str(home / '.local/bin') + os.pathsep + os.environ['PATH']}
+               'BOSS_SKIP_PLUGIN_CLI': '0' if os.environ.get('BOSS_TEST_NATIVE') == '1' else '1',
+               'PATH': str(home / '.local/bin') + os.pathsep + os.environ['PATH']}
 
         def run(args, cwd=home, timeout=90):
             result = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
@@ -37,7 +38,9 @@ def main():
                 raise RuntimeError(f'{Path(args[0]).name} exited {result.returncode}')
             return result.stdout
 
-        run([sys.executable, str(ROOT / 'scripts/install.py'), 'install', '--owner', 'fixture-owner'])
+        installed = run([sys.executable, str(ROOT / 'scripts/install.py'), 'install', '--owner', 'fixture-owner'])
+        if os.environ.get('BOSS_TEST_NATIVE') == '1':
+            assert 'codex=plugin' in installed, 'native fixture unexpectedly used fallback hooks'
         boss = [sys.executable, str(home / '.boss/distribution/plugins/boss-brain/scripts/boss.py')]
         run([*boss, 'init', '--rules-only'])
         # This global instruction is deliberately outside the managed block.
@@ -55,7 +58,7 @@ def main():
             run(['git', '-C', str(repo), 'commit', '-m', 'fixture'])
             run(['git', '-C', str(repo), 'remote', 'add', 'origin', f'https://github.com/fixture-owner/{name}.git'])
             run([*boss, 'adopt', str(repo)])
-            (repo / '.brain/STATE.md').write_text('# State\n\n' + marker + '\n')
+            (repo / '.brain/STATE.md').write_text('# State\n\n' + 'Synthetic state filler. ' * 120 + '\n' + marker + '\n')
             projects.append(repo)
         # A registered but unrelated damaged Brain must not suppress healthy context.
         damaged = home / 'damaged-fixture'
@@ -111,6 +114,17 @@ def main():
         audit = home / '.boss/state/audit.jsonl'
         assert any(json.loads(line).get('session') == sid for line in audit.read_text().splitlines()), 'Stop hook did not run'
         print('PASS real Codex: global rules, two projects, task constraint, resume, corrected scope, isolated damaged Brain, hook trace')
+        rule_prompt = ('From the supplied global instructions, put the original numbered user rule 1 and rule 5 '
+                       'in markers, retaining their Chinese wording. Use the global_marker preference and constraint="". '
+                       'Read-only, no tools or file reads; do not invent missing rules.')
+        rule_events = run([codex, 'exec', '--sandbox', 'read-only', '--cd', str(home), *flags, rule_prompt], timeout=180)
+        rule_result = json.loads(output.read_text())
+        rule_text = '\n'.join(rule_result['markers'])
+        assert '第一性原理' in rule_text and '不奉承、不迎合、不回避' in rule_text, 'original thinking discipline not loaded'
+        assert '不顺手重构没坏的代码' in rule_text, 'original surgical-edit discipline not loaded'
+        assert all(json.loads(line).get('item', {}).get('type') not in ('command_execution', 'mcp_tool_call')
+                   for line in rule_events.splitlines()), 'core-rule test unexpectedly used tools'
+        print('PASS real Codex: original core thinking/code rules retrieved from global instructions without tools', flush=True)
         if os.environ.get('BOSS_TEST_KNOWLEDGE') == '1':
             # A separately authorized disposable write fixture; never push its fake origin.
             instruction = (

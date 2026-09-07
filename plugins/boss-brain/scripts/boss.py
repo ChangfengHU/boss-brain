@@ -28,7 +28,13 @@ import time
 from typing import Any, Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import continuity
+try:
+    import continuity
+except ModuleNotFoundError as exc:
+    if exc.name == 'continuity' and sys.argv[1:2] == ['hook']:
+        print('{}')
+        raise SystemExit(0)
+    raise
 
 
 VERSION = "0.1.0"
@@ -542,7 +548,7 @@ def goal_drift_context(row: dict[str, str], current: str, candidate: str, score:
     )
 
 
-def project_context(row: dict[str, str], explicit: bool = True, capabilities=None) -> str:
+def project_context(row: dict[str, str], explicit: bool = True, capabilities=None, include_state: bool = True) -> str:
     root = Path(row["path"])
     if not root.is_dir():
         return f"[Boss Brain 内部上下文，请勿向用户复述]\n项目 {row['name']} 的登记路径不存在：{root}。不要在该路径写入。"
@@ -555,13 +561,13 @@ def project_context(row: dict[str, str], explicit: bool = True, capabilities=Non
     if row["summary"]:
         lines.append(f"定位：{row['summary']}")
     state = continuity.document(root, 'state')
-    if state.exists():
+    if include_state and state.exists():
         try:
             text = state.read_text(encoding="utf-8", errors="replace")
             lines.extend(["--- .brain/STATE.md ---", cap_text(text)])
         except OSError:
             pass
-    elif explicit:
+    elif include_state and explicit:
         lines.append("该项目尚无 STATE.md；不要因此打断用户当前任务。")
     tasks = active_tasks(brain)
     if tasks:
@@ -734,7 +740,7 @@ def convention_metadata(path: Path) -> dict[str, Any]:
 
 
 def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any]:
-    base = root / ".brain" / folder
+    base = continuity.document(root, folder)
     index = base / "index.md"
     try:
         index_text = index.read_text(encoding="utf-8", errors="replace")
@@ -825,7 +831,7 @@ def index_diagnostics(root: Path, folder: str, stale_days: int) -> dict[str, Any
 
 
 def fix_index(root: Path, folder: str, diagnostics: dict[str, Any]) -> bool:
-    base = root / ".brain" / folder
+    base = continuity.document(root, folder)
     index = base / "index.md"
     if not diagnostics["orphan"] and not diagnostics["index_missing"]:
         return False
@@ -926,7 +932,7 @@ def cmd_handoff_check(args: argparse.Namespace) -> int:
         print("not a Git repository", file=sys.stderr)
         return 2
     brain = root / ".brain"
-    handoff = brain / "HANDOFF.md"
+    handoff = continuity.document(root, 'handoff')
     acceptance = brain / "HANDOFF_ACCEPTANCE.md"
     try:
         handoff_text = handoff.read_text(encoding="utf-8", errors="replace")
@@ -1615,26 +1621,35 @@ def hook_stop(payload: dict[str, Any]) -> int:
     session = load_session(session_id)
     cwd = Path(str(payload.get("cwd") or os.getcwd()))
     root = git_root(cwd)
+    missing_baseline = continuity_enabled() and root and str(root.resolve()) not in session.get('roots', {})
     if root:
         register_rows([root])
-        claim_root(session_id, root)
+        if not missing_baseline:
+            claim_root(session_id, root)
         session = load_session(session_id)
     policy = config()["policy"]
     findings: list[dict[str, str]] = []
+    if missing_baseline:
+        findings.append({'code': 'baseline-missing', 'level': 'continuity',
+                         'message': f'{root} 没有本会话授权工作基线；不能判断本会话提交，不应宣称收工审计完整。'})
     for path, info in session.get("roots", {}).items():
         repo = Path(path)
         if repo.is_dir() and (repo / ".git").exists():
             findings.extend(audit_repo(repo, str(info.get("baseline") or ""), policy, str(info.get("task_id") or "")))
     append_audit(session_id, findings)
     pending = knowledge_pending(session_id)
-    reminder = {"systemMessage": knowledge_context(session_id, pending)} if pending else {}
+    messages = [knowledge_context(session_id, pending)] if pending else []
+    if missing_baseline:
+        messages.append('Boss Brain audit incomplete: no authorized work baseline for the current project.')
+    reminder = {'systemMessage': '\n'.join(messages)} if messages else {}
     if mode == "observe-only":
         print("{}")
         return 0
     if policy == "quiet":
         print(json.dumps(reminder, ensure_ascii=False))
         return 0
-    selected = findings if policy == "strict" else [item for item in findings if item["level"] == "data-loss"]
+    selected = [item for item in findings if item['code'] != 'baseline-missing' and
+                (policy == 'strict' or item['level'] == 'data-loss')]
     if not selected:
         print(json.dumps(reminder, ensure_ascii=False))
         return 0
@@ -1693,7 +1708,7 @@ def knowledge_reviews(session_id: str) -> list[dict[str, Any]]:
         projects |= {p for c in value.get('contracts', {}).values() for p in c.get('projects', [])}
         for project in projects:
             folder = runtime_home() / 'knowledge' / continuity.digest(project)
-            for path in sorted(folder.glob('*.json'))[:100]:
+            for path in sorted(folder.glob('*.json')):
                 item = read_json(path, {})
                 if item.get('project') == project and item.get('id'):
                     reviews[item['id']] = item
@@ -1829,7 +1844,7 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
 
 
 def state_summary(path: Path) -> str:
-    state = path / ".brain" / "STATE.md"
+    state = continuity.document(path, 'state')
     if not state.exists():
         return "-"
     try:
@@ -1889,7 +1904,7 @@ def cmd_caps(_: argparse.Namespace) -> int:
 
 def cmd_risk(_: argparse.Namespace) -> int:
     for row in read_registry():
-        state = Path(row["path"]) / ".brain" / "STATE.md"
+        state = continuity.document(Path(row['path']), 'state')
         try:
             text = state.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -2443,7 +2458,7 @@ def cmd_explain(args: argparse.Namespace) -> int:
         return 0
     print(f"EVENT    {value.get('event') or '-'}")
     print(f"MODE     {value.get('mode') or '-'} ({value.get('confidence') or 'unknown'} confidence)")
-    print(f"PROJECT  {value.get('project') or '-'}")
+    print(f"PROJECT  {value.get('project') or ', '.join(value.get('projects', [])) or '-'}")
     print(f"TASK     {value.get('task') or '-'}")
     if value.get("drift_task"):
         print(f"DRIFT    {value['drift_task']}")
@@ -2622,6 +2637,17 @@ def cmd_session_bind(args: argparse.Namespace) -> int:
     if args.access == 'work':
         for row in selected:
             claim_root(args.session_id, Path(row['path']))
+            try:
+                task = task_for_id(Path(row['path']) / '.brain', args.task_id)
+                if task and task['active']:
+                    state = load_session(args.session_id)
+                    state['roots'][row['path']]['task_id'] = task['id']
+                    save_session(args.session_id, state)
+                else:
+                    initialize_task(args.session_id, Path(row['path']))
+                initialize_goal(args.session_id, Path(row['path']))
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                pass  # Initialization below reports this project's malformed metadata.
             if continuity_enabled():
                 try:
                     result = continuity.brain_init(Path(row['path']), runtime_home())
@@ -2639,6 +2665,101 @@ def no_write_prompt(prompt: str) -> bool:
     return bool(re.search(r'只读|仅讨论|只讨论|不要修改|不修改|不记录|不要记录|不要写|不写入|read.only|do not (?:write|modify|record)', prompt, re.I))
 
 
+def multi_task_context(value, rows, paths, prompt):
+    """Reuse legacy task/goal semantics without claiming work or writing projects."""
+    contracts = value.setdefault('contracts', {})
+    notes, routing = [], {}
+    records = []
+    for row in rows:
+        if row['path'] not in paths:
+            continue
+        try:
+            records.extend((row, task) for task in task_records(Path(row['path']) / '.brain'))
+        except (OSError, ValueError):
+            continue
+
+    def select(row, task):
+        key = str(task['id'])
+        if key in contracts and row['path'] not in contracts[key].get('projects', []):
+            notes.append('任务选择未生效：相同任务 ID 已关联另一项目；请确认任务归属，当前任务保持不变。')
+            routing['suppression_reason'] = 'ambiguous-task-owner'
+            return
+        contracts.setdefault(key, {'goal': task['title'], 'constraints': [], 'projects': [row['path']],
+                                   'work_projects': [], 'source': 'project-task-context'})
+        value['focus_task'] = key
+        # Past authorized audit claims may follow a confirmed task switch. A read
+        # context alone must never establish a work baseline.
+        if row['path'] in value.get('roots', {}):
+            value['roots'][row['path']]['task_id'] = key
+
+    if not value.get('focus_task'):
+        legacy = [(row, task) for row, task in records if task['active'] and
+                  str(value.get('roots', {}).get(row['path'], {}).get('task_id', '')).lower() == str(task['id']).lower()]
+        active = [(row, task) for row, task in records if task['active']]
+        candidates = legacy or active
+        if len(candidates) == 1:
+            select(*candidates[0])
+    token = explicit_task(prompt)
+    if token:
+        matches = [(row, task) for row, task in records if str(task['id']).lower() == token.lower()]
+        existing = next((key for key in contracts if key.lower() == token.lower()), None)
+        if len(matches) == 1 and matches[0][1]['active']:
+            select(*matches[0])
+        elif not matches and existing:
+            value['focus_task'] = existing
+        else:
+            notes.append('任务选择未生效：任务未知、已完成或跨项目 ID 有歧义；当前任务保持不变。')
+            routing['suppression_reason'] = 'invalid-or-completed-task'
+    focused = value.get('focus_task', '')
+    if not token:
+        for row, task in records:
+            task_id = str(task['id'])
+            if focused and task_id.lower() != focused.lower() and task['active'] and re.search(
+                    rf'(?<![A-Za-z0-9_.-]){re.escape(task_id)}(?![A-Za-z0-9_.-])', prompt, re.I):
+                notes.append(task_drift_context(row, focused, task_id))
+                routing['drift_task'] = task_id
+                break
+        for row in rows:
+            if row['path'] not in paths:
+                continue
+            try:
+                goals = legacy_task_goals(Path(row['path']) / '.brain')
+            except (OSError, ValueError):
+                continue
+            if not goals:
+                continue
+            previous = value.get('roots', {}).get(row['path'], {}).get('goal')
+            current = value.setdefault('context_goals', {}).setdefault(row['path'], previous or goals[0])
+            ranked = sorted(((goal_match_score(prompt, goal), goal) for goal in goals if goal != current), reverse=True)
+            if ranked and ranked[0][0][0] >= 0.45 and (len(ranked) == 1 or ranked[0][0][0] - ranked[1][0][0] >= 0.1):
+                (score, evidence), candidate = ranked[0]
+                notes.append(goal_drift_context(row, current, candidate, score, evidence))
+                routing['goal_transition'] = {'current': current, 'candidate': candidate, 'score': score, 'evidence': evidence}
+                break
+    return notes, routing
+
+
+def pack_multi_context(parts, sections, budget):
+    """Keep task/ownership metadata first; fairly share the remaining body budget."""
+    text = redact_secrets('\n'.join(parts))
+    shortened = []
+    sections = [(name, redact_secrets(body)) for name, body in sections]
+    if len(text) > budget:
+        return text[:budget - 50] + '\n[达到上下文预算；任务元数据也有省略，请按源文件核对]', ['metadata', *[n for n, _ in sections]]
+    for index, (name, body) in enumerate(sections):
+        remaining = budget - len(text) - 1
+        rest = sections[index:]
+        full_size = sum(len(value) + 1 for _, value in rest)
+        allowance = remaining if full_size <= remaining else remaining // len(rest)
+        if len(body) > allowance:
+            shortened.append(name)
+            suffix = '\n[本节超出上下文预算，正文按源文件读取]'
+            body = body[:max(0, allowance - len(suffix))] + suffix if allowance >= len(suffix) else ''
+        if body:
+            text += '\n' + body
+    return text, shortened
+
+
 def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     sid = str(payload.get('session_id') or 'nosid')
     prompt = str(payload.get('prompt') or '')
@@ -2652,11 +2773,14 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     if root and not any(Path(r['path']).resolve() == root for r in rows):
         register_rows([root])  # Registry metadata only, never project writes here.
         rows = read_registry()
+    explicit = {r['path'] for r in rows if explicit_project(prompt, [r])}
+    workspace = {str(root)} if root else set()
+    focused_paths = set(value.get('contracts', {}).get(value.get('focus_task'), {}).get('projects', []))
+    task_notes, routing = multi_task_context(value, rows, explicit or workspace | focused_paths | set(value.get('roots', {})), prompt)
+    save_session(sid, value)
     contracts = value.get('contracts', {})
     focus = contracts.get(value.get('focus_task'), {})
     confirmed = set(focus.get('projects', []))
-    explicit = {r['path'] for r in rows if explicit_project(prompt, [r])}
-    workspace = {str(root)} if root else set()
     # Mentions and capability matches are retrieval candidates, not write ownership.
     mentioned = {r['path'] for r in rows if alias_project(prompt, [r])}
     unavailable = set()
@@ -2668,8 +2792,9 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     dependency_ids = {c['id'] for r, c in caps if r['path'] in seeds}
     related |= {r['path'] for r, c in caps if c['id'] in dependency_ids}
     selected = [r for r in rows if r['path'] in seeds | related]
+    optional_sections = []
     if not selected:
-        text = roster_context(rows) if rows else ''
+        parts = [roster_context(rows)] if rows else []
     else:
         selected.sort(key=lambda r: (r['path'] not in focus.get('projects', []),
                                       r['path'] not in explicit, r['path'] not in workspace, r['name']))
@@ -2680,13 +2805,19 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
         others = [key for key in contracts if key != value.get('focus_task')]
         if others:
             parts.append('本会话其他任务保留：' + ', '.join(others[:8]))
+        parts.extend(task_notes)
+        if re.search(r'@(?=\s|$)', prompt):
+            parts.append(roster_context(rows))
         for row in selected[:6]:
             path = Path(row['path'])
             grounded = row['path'] in confirmed | explicit | workspace
             parts.append(f"关联项目：{row['name']}；依据：{'confirmed/workspace' if grounded else 'mention/capability candidate'}；目录：{path}")
             if grounded:
                 try:
-                    parts.append(cap_text(project_context(row, capabilities=caps), 1300))
+                    parts.append(project_context(row, capabilities=caps, include_state=False))
+                    state = continuity.document(path, 'state')
+                    if state.is_file():
+                        optional_sections.append((row['name'] + ':state', f"当前项目：{row['name']}\n--- .brain/STATE.md ---\n来源：{state}\n" + cap_text(state.read_text(encoding='utf-8', errors='replace'))))
                 except (OSError, ValueError, subprocess.TimeoutExpired):
                     unavailable.add(row['name'])
                     parts.append('Context unavailable: this project metadata needs review; no ownership inferred.')
@@ -2697,7 +2828,7 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
                 try:
                     match = retrieve(row, prompt)
                     if match:
-                        parts.append(cap_text(match[0], 1200))
+                        optional_sections.append((row['name'] + ':' + retrieve.__name__, match[0]))
                 except (OSError, ValueError, subprocess.TimeoutExpired):
                     unavailable.add(row['name'])
             if not (path / '.brain/manifest.json').exists() and grounded:
@@ -2705,29 +2836,30 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
         parts.append('能力关联不代表切换目标；重要结论核实后按归属保存。更新用户确认的任务/约束时使用 boss session bind。')
         if len(selected) > 6:
             parts.append('更多候选（未加载正文）：' + ', '.join(r['name'] for r in selected[6:16]))
-        text = '\n'.join(parts)
     if unavailable:
-        text += '\nContext unavailable for some project metadata; other context retained: ' + ', '.join(sorted(unavailable)[:8])
+        parts.append('Context unavailable for some project metadata; other context retained: ' + ', '.join(sorted(unavailable)[:8]))
     # Initialization runs in the Agent's confirmed work binding, never from a
     # lexical prompt match. A question about "fixing" does not authorize writes.
     budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
-    text = redact_secrets(text)
-    if len(text) > budget:
-        text = text[:budget - 40] + '\n[达到上下文预算；其余资料按需读取]'
+    text, shortened = pack_multi_context(parts, optional_sections, budget)
     fingerprint = continuity.digest(text)
     value = load_session(sid)
     repeated = value.get('last_multi_digest') == fingerprint and event != 'SessionStart'
     value['last_multi_digest'] = fingerprint
     value['context_projects'] = [r['path'] for r in selected]
     value['last_context'] = {'schema': 3, 'session': sid, 'mode': 'multi-project', 'event': event,
+                             'at': now_iso(), 'content_policy': 'bounded-multi-project',
                              'projects': [r['name'] for r in selected], 'task': value.get('focus_task'),
                              'unavailable_projects': sorted(unavailable),
+                             'truncated_sections': shortened, 'sections': context_sections('multi-project', text),
+                             **routing,
                              'chars': 0 if repeated else len(text), 'sha256': fingerprint,
                              'injection': {'performed': not repeated, 'reason': 'duplicate' if repeated else 'relevant-projects'}}
     save_session(sid, value)
     append_trace(sid, value['last_context'])
     write_json(state_home() / 'last-context.json', value['last_context'])
     atomic_write(preview_file(sid), text + '\n')
+    atomic_write(state_home() / 'last-context-preview.txt', text + '\n')
     if not repeated:
         session_hook_output(sid, event, text)
     return 0

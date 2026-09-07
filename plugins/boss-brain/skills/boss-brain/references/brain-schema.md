@@ -17,4 +17,4 @@ Create files only when verified information exists:
 - `wiki/index.md` plus topic files: expensive-to-recover lessons, rejected options with reasons, and verified external-system facts.
 - `secrets/`: locations and recovery instructions only. Private secret values must remain ignored, permission-restricted, and outside documents.
 
-Conflict priority is: observed running state, code/configuration, the user's latest explicit decision, then older records. Note unresolved contradictions rather than guessing.
+Separate facts from authority: observations and code/configuration establish what currently exists, not permission to override the user's requirements. The user's latest explicit decision controls the intended outcome and authorized changes; report any mismatch with current reality. Older records are historical evidence. Note unresolved contradictions rather than guessing.

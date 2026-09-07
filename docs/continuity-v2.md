@@ -13,6 +13,8 @@ initializes registered GitHub projects. `--rules-only` excludes projects; repeat
 restricts initialization to registered paths. It does not scan and mutate every GitHub checkout.
 
 Directive writes retain outside text byte-for-byte and store a private pre-image before edits.
+The original twelve user core rules are included verbatim, before separately labeled v2
+additions. A template missing that core is refused. See [preservation audit](requirements-preservation-audit.md).
 The known Project Brains v0.7.0 block is migrated; unrecognized/edited blocks, duplicate markers
 and symlinks fail closed. Repeated init is idempotent. Installed block hashes are checked before
 uninstall/restore. Restoring rules preserves later outside edits; configuration rollback refuses
@@ -61,6 +63,9 @@ one-hop matching capability providers/consumers. Mentioned/dependent projects ar
 not write claims. Confirmed/workspace states are bounded; relevant conventions and wiki may
 both be injected. Other tasks remain in the session but do not automatically load all their files.
 Selection retains at most six project bodies within a configurable character budget (default 10,000).
+Task/ownership/index/relation metadata is packed before optional state and selected guidance
+bodies. Legacy state/topic limits remain; no extra 1,300/1,200-character whole-body caps apply.
+`truncated_sections` exposes budget losses rather than claiming all bodies loaded completely.
 Remaining candidate names are pointers. Content fingerprints suppress duplicates; SessionStart,
 resume and compact reinject even an unchanged fingerprint. Facts still need live verification.
 
@@ -73,6 +78,12 @@ Project metadata failures are isolated: a broken registry project's manifest doe
 healthy projects or the confirmed task goal. Capability inventory is collected once per v2
 context render and reused in project bodies. Failed projects appear in the private context
 warning and `unavailable_projects` trace, without reading paths outside their owning repository.
+
+The v2 path also preserves explicit `@task:ID`, stable-task and free-form-goal drift notices,
+and bare `@` roster access. Legacy selected task state can become read-only task context;
+context selection is not a work claim. A matching work-bound task feeds Stop's task audit.
+Stop reports a nonblocking audit gap if no authorized work baseline exists, rather than
+capturing the post-work HEAD and implying that nothing happened.
 
 ## Critical knowledge
 
