@@ -1683,6 +1683,16 @@ def cmd_hook(args: argparse.Namespace) -> int:
     if args.event == "session-start":
         return hook_session_start(payload)
     if args.event == "prompt-submit":
+        topic = help_prompt_topic(str(payload.get('prompt') or ''))
+        if topic is not None:
+            # Help must not bind tasks, scan projects, change switches or flag knowledge.
+            try:
+                text = boss_help_text(topic)
+            except ValueError as exc:
+                text = str(exc) + '\n\n' + boss_help_text([])
+            session_hook_output(str(payload.get('session_id') or 'nosid'), 'UserPromptSubmit',
+                '[用户主动请求 Boss 帮助；请展示以下命令说明，不执行示例或修改设置]\n' + text)
+            return 0
         capture = io.StringIO()
         with contextlib.redirect_stdout(capture):
             result = hook_prompt(payload)
@@ -2428,12 +2438,60 @@ def cmd_policy(args: argparse.Namespace) -> int:
 
 
 def cmd_receipt(args: argparse.Namespace) -> int:
+    if args.project:
+        if not continuity_enabled():
+            raise ValueError('项目级回执需要已启用的 v2；查看帮助不会自动初始化')
+        matches = [r for r in read_registry() if args.project in row_names(r)
+                   or Path(args.project).resolve() == Path(r['path']).resolve()]
+        if len(matches) != 1:
+            raise ValueError('项目未知或有歧义；请用 boss projects 确认名称或已登记的路径')
+        row = matches[0]
+        key = str(Path(row['path']).resolve())
+        if args.value:
+            with continuity.lock(runtime_home() / 'locks/project-receipts.lock'):
+                overrides = project_receipts()
+                if args.value == 'inherit':
+                    overrides.pop(key, None)
+                else:
+                    overrides[key] = args.value
+                write_json(runtime_home() / 'project-receipts.json', overrides)
+        overrides = project_receipts()
+        print(json.dumps({'project': row['name'], 'override': overrides.get(key, 'inherit'),
+                          'effective': overrides.get(key, config()['receipt']),
+                          'scope': '本机此项目的回执；不关闭上下文、知识提醒或结束检查'}, ensure_ascii=False))
+        return 0
+    if args.value == 'inherit':
+        raise ValueError('inherit 只用于 --project；全局策略保持不变')
     cfg = config()
     if args.value:
         cfg["receipt"] = args.value
         write_json(runtime_home() / "config.json", cfg)
     print(cfg["receipt"])
     return 0
+
+
+def project_receipts() -> dict[str, str]:
+    path = runtime_home() / 'project-receipts.json'
+    if path.is_symlink():
+        raise ValueError('项目回执配置不能是符号链接')
+    if not path.exists():
+        return {}
+    value = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(value, dict) or any(not isinstance(k, str) or not Path(k).is_absolute()
+                                         or v not in RECEIPT_POLICIES for k, v in value.items()):
+        raise ValueError('项目回执配置损坏；未覆盖原文件')
+    return value
+
+
+def multi_receipt_policies(selected):
+    try:
+        overrides = project_receipts()
+    except (OSError, ValueError):
+        # Unreadable switch state must not expose disabled receipts or drop context.
+        return {r['path']: 'off' for r in selected}, 'invalid-project-receipts'
+    default = config()['receipt']
+    return {r['path']: overrides.get(str(Path(r['path']).resolve()), default)
+            for r in selected}, ''
 
 
 def cmd_session_mode(args: argparse.Namespace) -> int:
@@ -2771,9 +2829,10 @@ def pack_multi_context(parts, sections, budget):
     return text, shortened
 
 
-def multi_context_receipt(value, selected, confirmed, workspace, explicit, routing, sections, event, sid):
+def multi_context_receipt(value, selected, confirmed, workspace, explicit, routing, sections, policies, event, sid):
     """Report routing separately from context-body deduplication and write authority."""
     primary = confirmed or workspace or explicit
+    selected = [r for r in selected if policies[r['path']] != 'off']
 
     def names(paths):
         rows = sorted(r['name'] for r in selected if r['path'] in paths)
@@ -2782,12 +2841,13 @@ def multi_context_receipt(value, selected, confirmed, workspace, explicit, routi
     current = names(primary)
     reference = names({r['path'] for r in selected} - primary)
     label = '任务项目' if confirmed else '工作目录项目' if workspace else '引用项目'
-    message = f'↳ Boss：{label} {current}' if current else '↳ Boss：未识别具体项目'
+    message = f'↳ Boss：{label} {current}' if current else ('↳ Boss：当前项目回执已关闭' if primary else '↳ Boss：未识别具体项目')
     if reference:
         message += '；参考项目 ' + reference
     if value.get('focus_task'):
         message += ' · ' + str(value['focus_task'])[:80]
-    guidance = [(name, continuity.digest(body)) for name, body in sections if ':state' not in name]
+    guidance = [(name, continuity.digest(body)) for name, body in sections if ':state' not in name
+                and any(name.startswith(r['name'] + ':') for r in selected)]
     kinds = [kind for kind in ('wiki', 'convention') if any(kind in name for name, _ in guidance)]
     if kinds:
         message += ' · 相关知识 ' + ','.join(kinds)
@@ -2800,7 +2860,8 @@ def multi_context_receipt(value, selected, confirmed, workspace, explicit, routi
     signature = continuity.digest(json.dumps({'projects': sorted(r['path'] for r in selected),
         'primary': sorted(primary), 'task': value.get('focus_task'), 'guidance': guidance,
         'message': message}, sort_keys=True))
-    policy = config()['receipt']
+    policy = ('always' if 'always' in policies.values() else 'changes' if 'changes' in policies.values()
+              else 'off' if policies else config()['receipt'])
     required = (event == 'UserPromptSubmit' and session_mode(sid) == 'enabled'
                 and policy != 'off' and (policy == 'always' or value.get('last_multi_receipt') != signature))
     if not required:
@@ -2895,7 +2956,8 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     # lexical prompt match. A question about "fixing" does not authorize writes.
     budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
     value = load_session(sid)
-    receipt = multi_context_receipt(value, selected, confirmed, workspace, explicit, routing, optional_sections, event, sid)
+    policies, receipt_error = multi_receipt_policies(selected)
+    receipt = '' if receipt_error else multi_context_receipt(value, selected, confirmed, workspace, explicit, routing, optional_sections, policies, event, sid)
     text, shortened = pack_multi_context(parts, optional_sections, budget - len(receipt))
     fingerprint = continuity.digest(text)
     repeated = value.get('last_multi_digest') == fingerprint and event != 'SessionStart'
@@ -2910,7 +2972,9 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
                              'truncated_sections': shortened, 'sections': context_sections('multi-project', text),
                              **routing,
                              'chars': len(output), 'sha256': continuity.digest(output),
-                             'receipt': {'policy': config()['receipt'], 'required': bool(receipt)},
+                             'receipt': {'policy': config()['receipt'], 'required': bool(receipt),
+                                         'projects': {r['name']: policies[r['path']] for r in selected},
+                                         'error': receipt_error},
                              'injection': {'performed': not repeated, 'reason': 'duplicate' if repeated else 'relevant-projects'}}
     save_session(sid, value)
     append_trace(sid, value['last_context'])
@@ -2922,10 +2986,38 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     return 0
 
 
+def help_prompt_topic(prompt: str) -> list[str] | None:
+    match = re.fullmatch(r'\s*(?:help\s+boss|boss\s+help|boss\s*帮助)(?:\s+([a-z][a-z0-9-]*(?:\s+[a-z][a-z0-9-]*)*))?\s*[。？！!?]?\s*', prompt, re.I)
+    return (match.group(1) or '').lower().split() if match else None
+
+
+def boss_help_text(topic: list[str]) -> str:
+    if not topic:
+        return (Path(__file__).resolve().parents[1] / 'assets/help.md').read_text(encoding='utf-8')
+    selected = parser()
+    for name in topic:
+        group = next((action for action in selected._actions if isinstance(action, argparse._SubParsersAction)), None)
+        if group is None or name not in group.choices:
+            raise ValueError('未知帮助主题；请用 boss help 查看目录，再用 boss help 命令名 查看参数')
+        selected = group.choices[name]
+    explanations = json.loads((Path(__file__).resolve().parents[1] / 'assets/help-topics.json').read_text(encoding='utf-8'))
+    detail = explanations.get(' '.join(topic), explanations.get(topic[0], '请查看下方参数；帮助不会执行命令。'))
+    return 'Boss 帮助（只展示说明，不执行命令）\n\n' + detail + '\n\n参数列表\n' + selected.format_help()
+
+
+def cmd_help(args: argparse.Namespace) -> int:
+    print(boss_help_text(args.topic))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="boss", description="Machine control and portable project continuity")
     result.add_argument("--version", action="version", version=f"boss {VERSION}")
-    subs = result.add_subparsers(dest="command", required=True)
+    result.set_defaults(func=cmd_help, topic=[])
+    subs = result.add_subparsers(dest="command")
+    help_parser = subs.add_parser('help', help='中文命令导航；可加命令名查看详细参数')
+    help_parser.add_argument('topic', nargs='*', help='例如 receipt 或 session mode')
+    help_parser.set_defaults(func=cmd_help)
     init = subs.add_parser('init')
     init.add_argument('--dry-run', action='store_true')
     init.add_argument('--rules-only', action='store_true')
@@ -3020,7 +3112,8 @@ def parser() -> argparse.ArgumentParser:
     policy.add_argument("value", nargs="?", choices=POLICIES)
     policy.set_defaults(func=cmd_policy)
     receipt = subs.add_parser("receipt")
-    receipt.add_argument("value", nargs="?", choices=RECEIPT_POLICIES)
+    receipt.add_argument("value", nargs="?", choices=(*RECEIPT_POLICIES, 'inherit'))
+    receipt.add_argument('--project', help='仅覆盖本机已登记项目的回执；inherit 恢复继承全局')
     receipt.set_defaults(func=cmd_receipt)
     session = subs.add_parser("session")
     session_subs = session.add_subparsers(dest="session_command", required=True)

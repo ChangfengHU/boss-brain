@@ -51,11 +51,42 @@ Legacy examples:
 
 The Codex hook protocol supplies instructions rather than a native status component, so receipt rendering depends on the agent following the injected receipt instruction. Real-Codex acceptance tests verify this behavior; the per-session trace remains the authoritative record.
 
+### Project receipt overrides (v2)
+
+`boss receipt --project NAME` queries an adopted project's override and effective value.
+Adding `always`, `changes` or `off` writes only that project's machine-local override;
+`inherit` removes it. Names, aliases and registered paths resolve through the registry;
+unknown or ambiguous projects are refused. Legacy mode refuses this option explicitly.
+The file is `~/.boss/project-receipts.json`, written atomically under a lock. It does not
+travel with project Git data or change the global setting. A project override therefore
+also applies to other sessions that actually reference that project on this machine.
+
+In a mixed-project receipt, `off` projects are omitted from the visible project list and
+guidance labels, while their actual context remains available. If any remaining associated
+project uses `always`, emit every prompt; otherwise use `changes`. No visible projects means
+no receipt. Session disabled/observe-only still wins. This is not a whole-project plugin
+disable switch; it must not bypass knowledge or Stop safeguards.
+
+Malformed/symlinked override files are not overwritten by the CLI. Hooks suppress receipts
+and report `receipt.error` while retaining normal context. Diagnose with explicit help and
+`boss explain`; do not silently reset the configuration to make an error disappear.
+
 `last_context.receipt` records the policy and whether the current output requests a receipt.
 `injection` describes context-body delivery, while `chars` and `sha256` describe the Hook's
 constructed output including any receipt. Observe-only mode still suppresses host delivery.
 `startup_unavailable` identifies failed local patrol/machine services independently of
 project metadata failures. These failures must not erase otherwise healthy context.
+`receipt.policy` remains the global default; `receipt.projects` records each associated
+project's effective setting, and `receipt.error` reports an unreadable override configuration.
+
+## Help requests
+
+`boss help` and a bare `boss` show the Chinese overview. `boss help COMMAND SUBCOMMAND`
+shows explanatory guidance plus the actual parser's arguments. The exact conversational
+forms `help boss`, `boss help` and `boss 帮助` (optionally followed by an English command
+topic) enter a read-only help Hook path before routing or knowledge capture. Repeated help
+is not lost to context deduplication. Disabled/observe-only sessions still suppress Hook
+output; an Agent may explicitly run the read-only CLI when the user asks for help.
 
 ## Session controls
 

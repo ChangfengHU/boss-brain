@@ -21,7 +21,8 @@ def main():
     version = json.loads((source / '.codex-plugin/plugin.json').read_text())['version']
     cache_root = live / '.codex/plugins/cache/boss-brain/boss-brain'
     for relative in ('scripts/boss.py', 'scripts/continuity.py', 'hooks/hooks.json',
-                     'assets/global-directives.md', 'assets/legacy-directives.md', 'skills/boss-brain/SKILL.md'):
+                     'assets/global-directives.md', 'assets/legacy-directives.md', 'skills/boss-brain/SKILL.md',
+                     'assets/help.md', 'assets/help-topics.json'):
         expected = (source / relative).read_bytes()
         assert (distribution / relative).read_bytes() == expected, f'distribution mismatch: {relative}'
         assert (cache_root / version / relative).read_bytes() == expected, f'cache mismatch: {relative}'
@@ -45,6 +46,7 @@ def main():
             return result.stdout
 
         script = distribution / 'scripts/boss.py'
+        assert '用途' in run(script, 'help', 'receipt'), 'installed detailed help missing'
         run(script, 'init', '--rules-only')
         run(script, 'receipt', 'always')
         # Registry metadata only: do not create a Brain for this read-only fixture.
@@ -55,10 +57,17 @@ def main():
             payload = {'session_id': f'probe-{index}', 'cwd': str(root), 'prompt': '只读查看项目'}
             result = json.loads(run(script, 'hook', 'prompt-submit', payload=payload))
             assert '↳ Boss：工作目录项目 fixture' in result['hookSpecificOutput']['additionalContext'], 'entrypoint did not forward repaired receipt'
+            help_result = json.loads(run(script, 'hook', 'prompt-submit', payload={**payload, 'prompt': 'help boss receipt'}))
+            assert '影响' in help_result['hookSpecificOutput']['additionalContext'], 'retired entrypoint lacks explanatory help'
             stopped = json.loads(run(script, 'hook', 'stop', payload=payload))
             assert stopped.get('decision') != 'block', 'read-only Stop unexpectedly blocked'
+        stable = distribution / 'scripts/boss.py'
+        run(stable, 'receipt', 'off', '--project', 'fixture')
+        result = run(stable, 'hook', 'prompt-submit', payload={'session_id': 'off-probe', 'cwd': str(root), 'prompt': '只读查看'})
+        assert '用户可见上下文回执' not in result, 'installed project receipt override ignored'
+        assert run(stable, 'receipt').strip() == 'always', 'project override changed global policy'
         assert not (root / '.brain').exists(), 'probe created project memory'
-    print(f'PASS installed source/cache equality, original rules and {len(versions)} live/retired prompt+Stop entrypoints')
+    print(f'PASS installed source/cache equality, original rules, help, project receipt and {len(versions)} live/retired prompt+Stop entrypoints')
 
 
 if __name__ == '__main__':

@@ -125,6 +125,20 @@ def main():
         assert all(json.loads(line).get('item', {}).get('type') not in ('command_execution', 'mcp_tool_call')
                    for line in rule_events.splitlines()), 'core-rule test unexpectedly used tools'
         print('PASS real Codex: original core thinking/code rules retrieved from global instructions without tools', flush=True)
+        if os.environ.get('BOSS_TEST_HELP') == '1':
+            help_answer = home / 'help-answer.txt'
+            config_before = (home / '.boss/config.json').read_bytes()
+            manifest_before = (projects[0] / '.brain/manifest.json').read_bytes()
+            run([codex, 'exec', '--sandbox', 'read-only', '--cd', str(projects[0]), '--disable', 'apps',
+                 '--dangerously-bypass-hook-trust', '--skip-git-repo-check', '-c', 'mcp_servers={}',
+                 '--json', '--output-last-message', str(help_answer), 'help boss receipt'], timeout=180)
+            answer = help_answer.read_text()
+            assert '--project' in answer and 'inherit' in answer and '全局' in answer, 'help missing scope or recovery guidance'
+            assert '上下文' in answer and ('不会' in answer or '不影响' in answer or '不关闭' in answer), 'help omitted receipt/plugin boundary'
+            assert (home / '.boss/config.json').read_bytes() == config_before, 'help changed settings'
+            assert (projects[0] / '.brain/manifest.json').read_bytes() == manifest_before, 'help changed project entry'
+            assert not (home / '.boss/project-receipts.json').exists(), 'help executed project-switch example'
+            print('PASS real Codex: explanatory Chinese help with project scope/recovery, no switch or project writes', flush=True)
         if os.environ.get('BOSS_TEST_RECEIPT') == '1':
             # No output schema: assert the actual user-visible answer, not just Hook JSON.
             run([*boss, 'receipt', 'always'])

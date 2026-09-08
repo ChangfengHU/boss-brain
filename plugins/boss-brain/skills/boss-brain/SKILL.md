@@ -1,6 +1,6 @@
 ---
 name: boss-brain
-description: Maintain development rules and continuity across a session's projects and capabilities. Use for project-dependent development, confirmed decisions and lessons, initialization, context inspection, task recovery and handoff. Ordinary unrelated questions need no project writes.
+description: Maintain development rules and continuity across a session's projects and capabilities. Use for project-dependent development, confirmed decisions and lessons, initialization, context inspection, task recovery, handoff, and "help boss" / "boss 帮助" command guidance. Ordinary unrelated questions need no project writes.
 ---
 
 # Boss Brain
@@ -9,6 +9,8 @@ Boss Brain is a background continuity layer, not a required workflow. Boss is ma
 
 ## Default behavior
 
+- For `help boss`, `boss help`, `boss 帮助` or questions about available commands, run `boss help` (or `boss help receipt` / `boss help session mode` for a specific topic) and explain the relevant entries in the user's language. Help is read-only: never execute examples, bind a task, initialize a Brain or change switches merely to show help. In a terminal the entry is `boss help`; do not replace the shell's built-in `help`.
+- When explaining commands, include their purpose, when to use them, scope, relevant parameters, expected result and reversal where applicable; do not return only syntax. `boss receipt VALUE --project NAME` controls this machine's receipts for one registered project in v2; `inherit` removes that override. It does not disable project context, knowledge or Stop checks. Query before changing settings; do not infer a requested switch change from a help example.
 - Complete the user's task first. Memory updates are a closing action and must not interrupt ordinary work.
 - Infer the workspace from the request, current Git root, or registry. Ask one short question only when the target truly cannot be determined.
 - Read `.brain/wiki/index.md` before re-solving a difficult or recurring project problem. Load only relevant entries.

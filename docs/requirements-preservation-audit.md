@@ -103,7 +103,7 @@ do not delete new features or user data to make a comparison pass.
 | Knowledge reminders and durable writeback | v2 cross-session tests; native decision persistence | Lexical candidates and changed bytes do not establish truth |
 | Development logs, push and Stop | Four original journeys replayed with actual v2 work bindings in `test_v2_stop_journeys.py`; v2 baseline/task-link tests | Record semantics still need Agent review |
 | Handoff and Wiki/convention checks | Existing CLI journeys plus v2 mapped-document checks | Actual takeover remains Agent-driven |
-| Session switches and isolation | New enabled-v2 receipt mode tests plus existing control journeys | Project-level switch was never implemented |
+| Session switches and isolation | Enabled-v2 receipt mode tests plus existing control journeys; project receipt overrides covered by `test_project_receipts.py` | Whole-project plugin disabling is separate and not implemented |
 | Missing Hook resources and old cache paths | Compatibility suite; six actual installed prompt/Stop entrypoints passed | Repeat probe for future promotions |
 | Startup full-home patrol and machine initialization | Restored; three enabled-v2 startup tests and native journey | Very large home-directory patrol latency needs operational monitoring |
 | Machine snapshot/restore | Existing explicit CLI journeys | Real timer longevity and reclaimed-host recovery not accepted |

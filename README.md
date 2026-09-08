@@ -71,6 +71,9 @@ for remaining release gates.
 Useful explicit commands:
 
 ```bash
+boss help
+boss help receipt
+boss help session mode
 boss projects
 boss scan --adopt
 boss status
@@ -94,6 +97,24 @@ boss vault-ref service:github --purpose "repository access"
 boss doctor
 boss knowledge list --session SESSION_ID
 ```
+
+In conversation, `help boss`, `boss help` and `boss 帮助` request read-only guidance.
+The Chinese overview routes by scenario; topic help explains purpose, scope, parameters,
+examples, expected outcomes and reversal where applicable. It uses the actual parser for
+argument syntax and never executes examples. In a terminal use `boss help`, not shell `help`.
+
+V2 supports per-project receipt overrides without changing the global default:
+
+```bash
+boss receipt --project PROJECT
+boss receipt always --project PROJECT
+boss receipt off --project PROJECT
+boss receipt inherit --project PROJECT
+```
+
+These settings are local to this machine and apply to that project across sessions. They
+only control visible receipts, not context, knowledge or Stop checks. `inherit` removes the
+override. See `boss help receipt` for mixed-project behavior and configuration recovery.
 
 `quiet` records findings without blocking. `guarded` blocks only data-loss risks such as unpushed commits. `strict` also enforces project continuity records.
 
