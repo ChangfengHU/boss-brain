@@ -7,5 +7,6 @@
 - [x] [BOSS-RECEIPT-PROMOTE] Installed `4f2e368` on this host; source/cache and six current/retired prompt+Stop entries passed. Global directive, registry and config hashes unchanged.
 - [x] [BOSS-LEGACY-HOOK-POLICY] Restored v2 daily patrol/local machine initialization and replayed four original Stop remediation journeys through v2 work bindings. Checklist updated with evidence and remaining non-equivalences; not a universal platform/semantic acceptance claim.
 - [x] [BOSS-COMPAT] `4f2e368`: 122 tests and native Codex acceptance passed; safely promoted receipt/startup repairs while preserving original rules, project data and newer features. Pushed; see dev-log/2026-09-07.md.
+- [x] [BOSS-HELP] `43e77b9`: explanatory Chinese CLI/chat help plus v2 project receipt query/set/inherit. 131 tests, native help/receipt acceptance and seven installed entrypoints passed. No default or user project switch changed; whole-project disabling not included.
 - [ ] [BOSS-ROLLOUT] Review owner-specific initialization gaps before any bulk project/fleet rollout; do not rewrite ignore rules or delegated ownership automatically.
 - [ ] [BOSS-PLATFORMS] Validate real Claude and additional operating systems before claiming their behavior supported.

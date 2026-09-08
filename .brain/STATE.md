@@ -2,10 +2,10 @@
 
 ## Current state
 
-The user chose forward compatibility, not rollback. `4f2e368` installed the receipt
-repair and restored v2 startup services on this host. Version is
-`0.1.0+codex.20260908023646`; source/cache equality and six installed/retired
-prompt and Stop entrypoints passed. The compatibility checklist in
+The user chose forward compatibility, not rollback. `43e77b9` adds explanatory
+Chinese help and project-scoped receipt overrides on top of the accepted repairs.
+Installed version is `0.1.0+codex.20260908033047`; source/cache equality and seven
+installed/retired help, prompt and Stop entrypoints passed. The compatibility checklist in
 `docs/requirements-preservation-audit.md` tracks evidence and remaining boundaries.
 
 Preservation repair `9aa7f9d` supersedes the earlier broad v2 acceptance claim.
@@ -21,6 +21,12 @@ has not been accepted. Use `boss init --dry-run` to inspect other adopted projec
 this upgrade did not bulk-modify their documentation or business services.
 
 ## Verified behavior
+
+- `43e77b9`: 131 tests passed. Detailed help explains purpose, scope, examples,
+  expected results and recovery without executing examples. Native Codex explained
+  project scope/recovery without changing settings or project entries. Project
+  overrides preserve global defaults, context and guarded Stop; seven installed
+  entries and installed help/override probes passed. Protected-file hashes unchanged.
 
 - `4f2e368`: 122 deterministic tests passed. Added v2 daily-patrol/local-machine
   initialization checks and replayed four original Stop remediation journeys with
@@ -56,6 +62,11 @@ receipt policy; it reports the first route and later routing/guidance changes, n
 every identical prompt. New threads pick up the new plugin catalog; old executable
 entrypoints were preserved and verified. Do not reinstall merely to answer questions.
 Further fleet rollout and real platform acceptance require their own scope.
+
+Users can ask `help boss` or run `boss help receipt` for detailed Chinese guidance.
+Project receipt overrides use `boss receipt VALUE --project NAME`; `inherit` removes
+the machine-local override. No project override was enabled on behalf of the user.
+Whole-project plugin disabling remains separate and was not implemented or assumed.
 
 Task scope corrections use `session bind --replace-projects` with the full revised
 list and access level. Inspect per-project failures in initialization results or
