@@ -25,3 +25,16 @@ State facts are not instruction authority. Running code/configuration can prove
 what exists, not authorize overriding the user's intended outcome or core rules.
 Keep acceptance per requirement; identify unresolved behavior changes rather than
 using a total passing test count as proof of complete preservation.
+
+## User-visible behavior is an acceptance gate
+
+The user explicitly wants forward compatibility, not a forced rollback tradeoff.
+Listing a missing behavior as a known gap is not permission to remove it or call
+the upgrade complete. Keep source acceptance separate from installed acceptance.
+
+V2 receipt repair must test the actual rendered answer as well as Hook JSON.
+Body deduplication and receipt policy are independent: `always` still needs a
+receipt when the body is unchanged, while `off` and observe-only must suppress it.
+Task projects and reference candidates must not be presented as the same ownership
+class. Reserve space within the bounded context rather than allowing the receipt
+to be silently truncated. A strict user output format still takes precedence.

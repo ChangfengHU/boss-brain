@@ -2,6 +2,11 @@
 
 ## Current state
 
+The user chose forward compatibility, not rollback. Source receipt repair `9946caf`
+passed isolated acceptance and has NOT replaced the shared installed runtime. Do not
+claim that existing sessions already display the repaired receipt. The compatibility
+checklist in `docs/requirements-preservation-audit.md` tracks remaining release gates.
+
 Preservation repair `9aa7f9d` supersedes the earlier broad v2 acceptance claim.
 The twelve original user rules are restored verbatim in installed global directives.
 Twelve audited implementation/compatibility findings were addressed; see
@@ -15,6 +20,11 @@ has not been accepted. Use `boss init --dry-run` to inspect other adopted projec
 this upgrade did not bulk-modify their documentation or business services.
 
 ## Verified behavior
+
+- `9946caf`: 115 deterministic tests passed, including seven v2 receipt tests.
+  Final source passed native Codex visible-receipt, original-rule, long-context,
+  multi-project and resume/corrected-scope acceptance. The first receipt run also
+  preserved the authorized knowledge-writeback journey. No shared reinstall occurred.
 
 - Preservation suite: 108 tests passed, including 16 enabled-v2 preservation tests.
   Real isolated native Codex loaded original thinking/code rules without tools,
@@ -33,6 +43,11 @@ this upgrade did not bulk-modify their documentation or business services.
 - Source commits: `89b2780`, `35b23d7`, `e10243e`, `8677bbc`; all pushed.
 
 ## Next action
+
+Review a controlled promotion of the accepted source receipt repair that
+preserves live Hook entrypoints. Do not automatically reinstall as a side effect
+of answering plugin questions. Startup patrol/machine initialization and broader
+compatibility acceptance remain open; do not represent receipts alone as full parity.
 
 Task scope corrections use `session bind --replace-projects` with the full revised
 list and access level. Inspect per-project failures in initialization results or
