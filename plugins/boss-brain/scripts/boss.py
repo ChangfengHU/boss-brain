@@ -1312,6 +1312,17 @@ def hook_session_start(payload: dict[str, Any]) -> int:
     if session_mode(session_id) == "disabled":
         return 0
     if continuity_enabled():
+        # Restore the legacy local startup services without claiming project work.
+        # A failed inventory service must not suppress healthy task context.
+        failures = []
+        for name, service in (('patrol', patrol), ('machine-init', ensure_machine_initialized)):
+            try:
+                service()
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+                failures.append(name)
+        value = load_session(session_id)
+        value['startup_unavailable'] = failures
+        save_session(session_id, value)
         return hook_multi_context(payload, 'SessionStart')
     cleanup_state()
     added, _skipped = patrol()
@@ -2878,6 +2889,8 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
             parts.append('更多候选（未加载正文）：' + ', '.join(r['name'] for r in selected[6:16]))
     if unavailable:
         parts.append('Context unavailable for some project metadata; other context retained: ' + ', '.join(sorted(unavailable)[:8]))
+    if value.get('startup_unavailable'):
+        parts.append('Local startup services unavailable; project context retained: ' + ', '.join(value['startup_unavailable']))
     # Initialization runs in the Agent's confirmed work binding, never from a
     # lexical prompt match. A question about "fixing" does not authorize writes.
     budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
@@ -2892,6 +2905,7 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     value['last_context'] = {'schema': 3, 'session': sid, 'mode': 'multi-project', 'event': event,
                              'at': now_iso(), 'content_policy': 'bounded-multi-project',
                              'projects': [r['name'] for r in selected], 'task': value.get('focus_task'),
+                             'startup_unavailable': value.get('startup_unavailable', []),
                              'unavailable_projects': sorted(unavailable),
                              'truncated_sections': shortened, 'sections': context_sections('multi-project', text),
                              **routing,
