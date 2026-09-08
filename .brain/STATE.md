@@ -2,6 +2,12 @@
 
 ## Current state
 
+Execution observability is implemented in source with opt-in session/project display
+levels and a direct terminal event viewer. 140 tests and isolated native Codex
+lifecycle passed. Shared installation pending; interactive inline systemMessage
+rendering is not claimed. See docs/execution-observability.md and
+dev-log/2026-09-08-observability.md. Existing defaults/core rules are preserved.
+
 The user chose forward compatibility, not rollback. `43e77b9` adds explanatory
 Chinese help and project-scoped receipt overrides on top of the accepted repairs.
 Installed version is `0.1.0+codex.20260908033047`; source/cache equality and seven

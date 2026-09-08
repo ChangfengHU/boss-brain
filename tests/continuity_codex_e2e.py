@@ -60,6 +60,8 @@ def main():
             run([*boss, 'adopt', str(repo)])
             (repo / '.brain/STATE.md').write_text('# State\n\n' + 'Synthetic state filler. ' * 120 + '\n' + marker + '\n')
             projects.append(repo)
+        if os.environ.get('BOSS_TEST_DISPLAY') == '1':
+            run([*boss, 'display', 'detail', '--project', 'workflow-fixture'])
         # A registered but unrelated damaged Brain must not suppress healthy context.
         damaged = home / 'damaged-fixture'
         damaged.mkdir()
@@ -83,6 +85,15 @@ def main():
         assert set(result['markers']) == {'WORKFLOW_N93R', 'BROWSER_F62P'}, 'multi-project context not loaded'
         parsed = [json.loads(line) for line in events.splitlines() if line.startswith('{')]
         sid = next(item['thread_id'] for item in parsed if item.get('type') == 'thread.started')
+        if os.environ.get('BOSS_TEST_DISPLAY') == '1':
+            recorded = [json.loads(line) for line in run([*boss, 'events', '--session', sid, '--json']).splitlines()]
+            assert any('WORKFLOW_N93R' in e['context_body'] for e in recorded), 'actual context body not recorded'
+            assert any(e['event'] == 'stop' for e in recorded), 'actual Stop not observed'
+            visible = run([*boss, 'events', '--session', sid, '--detail'])
+            assert 'WORKFLOW_N93R' in visible and 'no-change' in visible, 'CLI event viewer missing evidence'
+            # JSON event output is an observable transport, not proof that an
+            # interactive terminal rendered a Hook systemMessage.
+            print('PASS real Codex: actual prompt/Stop recorded, body matches context marker, CLI viewer displays records; inline host rendering NOT claimed', flush=True)
         run([*boss, 'session', 'bind', sid, '--task-id', 'PUBLISH', '--project', 'workflow-fixture',
              '--project', 'browser-fixture', '--goal', 'publish fixture', '--constraint', 'WORKFLOW_EXECUTES_BROWSER_ONLY_ASSISTS'])
         resume = ('Return the same opaque state markers and global_marker, plus the exact current task constraint '

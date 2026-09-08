@@ -10,6 +10,7 @@ Boss Brain 是开发辅助层：Boss 管本机项目和会话，项目 .brain �
 不知道从哪开始？
   想知道管了哪些项目：boss projects，再用 boss status 看工作区状态。
   想知道识别是否正确：boss explain --session SESSION --show。
+  想看到真实执行过程：boss help display，然后 boss help events；不依赖 Agent 口头回执。
   想让某项目每轮提示：boss help receipt；里面说明全局与项目覆盖的区别、效果及恢复方法。
   想临时停用本会话：boss help session mode；它不会清除已加载的全局规则。
   想接管已有仓库：boss help adopt；确认写入范围后再执行，不必先做全局初始化仪式。
@@ -27,6 +28,12 @@ Boss Brain 是开发辅助层：Boss 管本机项目和会话，项目 .brain �
   boss doctor                   基础运行环境检查
 
 回执与开关（带值的命令会修改设置）
+  boss display detail --session SESSION   仅本会话记录详细执行事件和脱敏注入正文
+  boss display summary --project 项目名   本机该项目的摘要观察；不修改项目仓库
+  boss display off --session SESSION      关闭本会话新增观察，旧记录不会自动删除
+  boss display inherit --session SESSION  恢复继承项目；默认 off
+  boss events --session SESSION --detail  在终端展示已记录事件和实际注入正文
+  boss events --session SESSION --follow --detail   持续显示新事件，Ctrl-C 退出
   boss receipt                  查看全局回执策略
   boss receipt always           全局：每轮提示
   boss receipt changes          全局：首次及识别结果变化时提示

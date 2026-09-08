@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] [BOSS-OBSERVE] Opt-in execution event capture and direct CLI viewer implemented; 140 tests and isolated native lifecycle passed. Shared installation and interactive inline host-display acceptance pending. See docs/execution-observability.md.
+
 - [x] [BOSS-V2] Implement and locally install managed global directives, adopted-project initialization, multi-project context and durable knowledge reviews. Evidence: dev-log/2026-09-07.md.
 - [x] [BOSS-V2-REFINE] Correct task project/access scope without erasing other tasks or audit history; isolate damaged project metadata; report partial initialization. Commit: `93ff028`; deterministic and real Codex acceptance passed.
 - [x] [BOSS-PRESERVE] Restore all twelve original core rules and address audited v2 task/context/audit/knowledge compatibility gaps. Commit: `9aa7f9d`; 108 tests and native Codex acceptance passed. Full scope and limits: docs/requirements-preservation-audit.md.

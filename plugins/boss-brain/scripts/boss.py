@@ -59,6 +59,11 @@ def bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
 
 
 def redact_secrets(value: str) -> str:
+    value = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|\Z)',
+                   '[REDACTED_PRIVATE_KEY]', value, flags=re.S)
+    value = re.sub(r'(?i)\b(Bearer|Basic)\s+[A-Za-z0-9+/_.=:-]+', r'\1 [REDACTED]', value)
+    value = re.sub(r'(?im)(["\']?(?:[\w-]*(?:token|secret|password|api[_-]?key|cookie|authorization))["\']?\s*[:=]\s*)[^\n,}]+',
+                   r'\1[REDACTED]', value)
     return TOKEN_RE.sub("[REDACTED_SECRET]", value)
 
 
@@ -551,6 +556,9 @@ def goal_drift_context(row: dict[str, str], current: str, candidate: str, score:
 def project_context(row: dict[str, str], explicit: bool = True, capabilities=None, include_state: bool = True) -> str:
     root = Path(row["path"])
     if not root.is_dir():
+        if row.get('kind') == 'remote':
+            return (f"远程项目：{row['name']}；远程登记路径：{root}；定位：{row.get('summary', '')}\n"
+                    '远程 Brain 未在本机加载；Hook 不联网，不应在本机创建目录或初始化该项目。')
         return f"[Boss Brain 内部上下文，请勿向用户复述]\n项目 {row['name']} 的登记路径不存在：{root}。不要在该路径写入。"
     brain = root / ".brain"
     lines = [
@@ -1678,8 +1686,7 @@ def read_payload() -> dict[str, Any]:
         return {}
 
 
-def cmd_hook(args: argparse.Namespace) -> int:
-    payload = read_payload()
+def run_hook(args: argparse.Namespace, payload: dict[str, Any]) -> int:
     if args.event == "session-start":
         return hook_session_start(payload)
     if args.event == "prompt-submit":
@@ -1711,6 +1718,34 @@ def cmd_hook(args: argparse.Namespace) -> int:
             print(raw)
         return result
     return hook_stop(payload)
+
+
+def cmd_hook(args: argparse.Namespace) -> int:
+    payload = read_payload()
+    capture = io.StringIO()
+    with contextlib.redirect_stdout(capture):
+        result = run_hook(args, payload)
+    raw = capture.getvalue()
+    try:
+        import observability
+        raw = observability.observe(sys.modules[__name__], payload, args.event, raw)
+    except (ImportError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
+        # Optional display failures must preserve the original context/decision.
+        # Report only a fixed diagnostic: exceptions may contain document secrets.
+        print('Boss display unavailable; original Hook result preserved.', file=sys.stderr)
+    if raw.strip():
+        print(raw.strip())
+    return result
+
+
+def cmd_display(args: argparse.Namespace) -> int:
+    import observability
+    return observability.command_display(sys.modules[__name__], args)
+
+
+def cmd_events(args: argparse.Namespace) -> int:
+    import observability
+    return observability.command_events(sys.modules[__name__], args)
 
 
 def knowledge_pending(session_id: str) -> list[dict[str, Any]]:
@@ -2905,6 +2940,7 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     related |= {r['path'] for r, c in caps if c['id'] in dependency_ids}
     selected = [r for r in rows if r['path'] in seeds | related]
     optional_sections = []
+    retrieval_sources = []
     if not selected:
         parts = [roster_context(rows)] if rows else []
     else:
@@ -2927,9 +2963,14 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
             if grounded:
                 try:
                     parts.append(project_context(row, capabilities=caps, include_state=False))
+                    if row.get('kind') == 'remote' and not path.is_dir():
+                        unavailable.add(row['name'])
+                        continue
                     state = continuity.document(path, 'state')
                     if state.is_file():
                         optional_sections.append((row['name'] + ':state', f"当前项目：{row['name']}\n--- .brain/STATE.md ---\n来源：{state}\n" + cap_text(state.read_text(encoding='utf-8', errors='replace'))))
+                        retrieval_sources.append({'section': row['name'] + ':state', 'path': str(state),
+                                                  'reason': 'confirmed/workspace project state'})
                 except (OSError, ValueError, subprocess.TimeoutExpired):
                     unavailable.add(row['name'])
                     parts.append('Context unavailable: this project metadata needs review; no ownership inferred.')
@@ -2941,6 +2982,11 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
                     match = retrieve(row, prompt)
                     if match:
                         optional_sections.append((row['name'] + ':' + retrieve.__name__, match[0]))
+                        category = 'wiki' if retrieve == relevant_wiki_context else 'conventions'
+                        source = continuity.document(path, category)
+                        source = source / match[1] if source.is_dir() else source
+                        retrieval_sources.append({'section': row['name'] + ':' + retrieve.__name__,
+                                                  'path': str(source), 'reason': 'prompt/index topic match' if source.is_file() else 'unavailable'})
                 except (OSError, ValueError, subprocess.TimeoutExpired):
                     unavailable.add(row['name'])
             if not (path / '.brain/manifest.json').exists() and grounded:
@@ -2970,6 +3016,8 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
                              'startup_unavailable': value.get('startup_unavailable', []),
                              'unavailable_projects': sorted(unavailable),
                              'truncated_sections': shortened, 'sections': context_sections('multi-project', text),
+                             'retrieval_sources': [{**source, 'budget_truncated': source['section'] in shortened,
+                                                    'reinjected': not repeated} for source in retrieval_sources],
                              **routing,
                              'chars': len(output), 'sha256': continuity.digest(output),
                              'receipt': {'policy': config()['receipt'], 'required': bool(receipt),
@@ -3018,6 +3066,19 @@ def parser() -> argparse.ArgumentParser:
     help_parser = subs.add_parser('help', help='中文命令导航；可加命令名查看详细参数')
     help_parser.add_argument('topic', nargs='*', help='例如 receipt 或 session mode')
     help_parser.set_defaults(func=cmd_help)
+    display = subs.add_parser('display', help='执行观察开关；只作用于指定会话或本机项目')
+    display.add_argument('value', nargs='?', choices=('off', 'summary', 'detail', 'inherit'))
+    display_scope = display.add_mutually_exclusive_group(required=True)
+    display_scope.add_argument('--session')
+    display_scope.add_argument('--project')
+    display.set_defaults(func=cmd_display)
+    events = subs.add_parser('events', help='直接在终端显示真实 Hook 事件，不依赖模型复述')
+    events.add_argument('--session', required=True)
+    events.add_argument('--follow', action='store_true')
+    events.add_argument('--detail', action='store_true')
+    events.add_argument('--json', action='store_true')
+    events.add_argument('--limit', type=int, default=10, choices=range(1, 41), metavar='1..40')
+    events.set_defaults(func=cmd_events)
     init = subs.add_parser('init')
     init.add_argument('--dry-run', action='store_true')
     init.add_argument('--rules-only', action='store_true')
