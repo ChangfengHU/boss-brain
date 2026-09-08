@@ -56,17 +56,19 @@ v2 and is not presented as a newly introduced code deletion.
 
 ## Differences not silently declared equivalent
 
-- The installed v2 runtime still lacks automatic user-visible routing receipts.
-  Following the user's compatibility correction, the current source reconnects
+- Following the user's compatibility correction, the installed v2 runtime reconnects
   bounded receipts to the multi-project path without reverting v2. It preserves
   off/changes/always policies, distinguishes task owners from reference projects,
   and separates receipt delivery from body deduplication. See `tests/test_v2_receipts.py`
-  and `BOSS_TEST_RECEIPT=1` in the native Codex journey. Source acceptance is not
-  shared-runtime deployment; full legacy parity is still not claimed.
-- Legacy SessionStart called patrol and automatic machine-Brain initialization.
-  v2 registers the current qualified workspace, while explicit scan/machine CLI
-  workflows remain. Full-home automatic patrol/machine initialization is not
-  claimed restored; lifecycle scope and latency need explicit acceptance.
+  and `BOSS_TEST_RECEIPT=1` in the native Codex journey. `4f2e368` promoted these
+  repairs on the development host; actual installed source/cache equality and six
+  live/retired prompt and Stop entrypoints passed `tests.installed_hooks_e2e`.
+- Legacy daily patrol and local machine-Brain initialization are restored in v2
+  SessionStart by `4f2e368`. The three enabled-v2 startup tests cover registration,
+  idempotence, no project writes/work claims, disable/auto-init opt-out and isolated
+  service failures. No remote creation or push was added to startup. The four old
+  Stop remediation journeys also pass through real v2 work bindings using local
+  bare upstreams, covering push, missing/stale records and dirty Brain data.
 - v2 can retrieve relevant guidance from multiple mention/capability candidates;
   the legacy alias path supplied only a pointer. Candidate retrieval is read-only
   and not a work claim. This is a multi-project behavior change, not identical
@@ -77,7 +79,8 @@ v2 and is not presented as a newly introduced code deletion.
 No semantic guarantee that an Agent always obeys every rule, always identifies
 important knowledge, or never misinterprets project ownership. No all-project or
 fleet-wide initialization, real Claude/Windows/macOS acceptance, unlimited context,
-or automatic Git persistence inside hooks. Baseline absence is reported, not
+or automatic business-project Git persistence inside hooks. Local machine inventory
+initialization retains its old local snapshot commit; it does not push. Baseline absence is reported, not
 reconstructed. Existing strict/data-loss checks are not blanket-disabled.
 
 Future migrations must review both clause preservation and enabled-path user
@@ -93,16 +96,16 @@ do not delete new features or user data to make a comparison pass.
 | User-visible contract | Evidence / current disposition | Remaining release gate |
 | --- | --- | --- |
 | Original twelve global rules | `test_all_original_core_rules_survive_global_migration`; native rule retrieval | No guarantee of every future semantic decision |
-| Project identification feedback | `test_v2_receipts.py`; optional native visible-answer assertion | Shared installed runtime not updated |
+| Project identification feedback | `test_v2_receipts.py`; native visible-answer assertion; installed cache/old-entry probe | Host rendering still follows Agent instructions, not a native UI component |
 | Task switch and drift | Enabled-v2 preservation tests plus receipt task-switch test | Natural-language false positives remain possible |
 | Context, long state and Wiki/conventions | Enabled-v2 preservation and native long-marker journey | Bounded selective retrieval, not full-history loading |
 | Multiple task owners and corrected scope | `test_continuity_refinements.py`; native resume/correction | Agent must verify intended ownership |
 | Knowledge reminders and durable writeback | v2 cross-session tests; native decision persistence | Lexical candidates and changed bytes do not establish truth |
-| Development logs, push and Stop | Existing strict/guarded journeys; v2 baseline/task-link tests | Full strict remediation journey still needs explicit enabled-v2 replay |
+| Development logs, push and Stop | Four original journeys replayed with actual v2 work bindings in `test_v2_stop_journeys.py`; v2 baseline/task-link tests | Record semantics still need Agent review |
 | Handoff and Wiki/convention checks | Existing CLI journeys plus v2 mapped-document checks | Actual takeover remains Agent-driven |
 | Session switches and isolation | New enabled-v2 receipt mode tests plus existing control journeys | Project-level switch was never implemented |
-| Missing Hook resources and old cache paths | Compatibility suite and prior retired-entry checks | Recheck installed entrypoints before any promotion |
-| Startup full-home patrol and machine initialization | Explicit commands retained; v2 startup bypass remains | Restore/validate lifecycle behavior; cannot declare equivalent |
+| Missing Hook resources and old cache paths | Compatibility suite; six actual installed prompt/Stop entrypoints passed | Repeat probe for future promotions |
+| Startup full-home patrol and machine initialization | Restored; three enabled-v2 startup tests and native journey | Very large home-directory patrol latency needs operational monitoring |
 | Machine snapshot/restore | Existing explicit CLI journeys | Real timer longevity and reclaimed-host recovery not accepted |
 | Multiple-candidate retrieval | v2 intentionally retrieves more than old alias-only pointers | Documented behavior change, not identical legacy routing |
 | Claude / Windows / macOS | No real-host acceptance | Do not claim accepted support |
@@ -110,3 +113,10 @@ do not delete new features or user data to make a comparison pass.
 The user's desired outcome is forward compatibility, not a forced choice between old and new
 features. A known behavioral gap must be tracked as an unresolved release gate, not renamed
 an optimization or silently accepted because it appears in this document.
+
+Acceptance for `4f2e368`: 122 deterministic tests passed; native Codex verified visible
+receipts, original core rules, multi-project/long context, resume/scope correction, damaged
+project isolation and authorized knowledge persistence. Installed version is
+`0.1.0+codex.20260908023646`. The two global directive files, registry and Boss config were
+byte-identical before and after installation. No business service or project memory was
+rewritten by the installer. The installation backup is retained locally, not committed.

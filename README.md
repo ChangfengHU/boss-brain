@@ -57,14 +57,14 @@ The installer preserves existing `~/.boss/`, project `.brain/` directories, and 
 
 ## Everyday behavior
 
-In legacy mode, session start performs a daily local patrol and initializes the local machine
-Brain once. Enabled v2 currently registers the qualified current workspace instead; full-home
-startup patrol and automatic machine initialization remain migration gaps, not equivalent
-behavior. Explicit scan/machine commands remain available. Discovery alone does not create a
-project `.brain/`; authorized v2 work bindings initialize basic entries.
+Session start performs a daily local patrol and initializes the local machine Brain once in
+both legacy mode and enabled v2. Discovery remains owner-qualified and does not create project
+`.brain` entries; authorized v2 work bindings initialize them. Existing machine auto-init
+opt-out is respected. Startup does not create remote repositories or push, and a failed local
+startup service is reported without suppressing healthy project context.
 
-The source receipt repair restores visible v2 project/task feedback; it has not yet been
-promoted to the shared installed runtime. See [observability](docs/observability.md) for
+The receipt and startup compatibility repairs are installed on the development host; other
+machines are not implicitly upgraded. See [observability](docs/observability.md) for
 `changes`/`always`/`off` behavior and [compatibility audit](docs/requirements-preservation-audit.md)
 for remaining release gates.
 

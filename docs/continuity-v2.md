@@ -30,6 +30,13 @@ already-adopted Git root. `boss init` can repair all registered projects. `sessi
 performs the same initialization as part of the Agent's explicitly authorized work setup.
 Hooks never initialize on SessionStart, scanning, ambiguous mentions or read-only requests.
 
+This boundary concerns project Brains. The legacy daily local patrol and one-time local
+machine-Brain initialization now also run in v2 SessionStart. They do not claim project work,
+create remote repositories or push. Disabled sessions skip them; machine `auto_init: false`
+remains effective. Service failures are isolated in `startup_unavailable`, not a reason to
+discard healthy multi-project context. Legacy blanket session-cache expiry is not re-enabled
+as part of this repair; existing session/task/knowledge data is retained.
+
 The manifest contains schema 2, normalized GitHub identity, content status `needs-review`,
 relative document mappings and an explicit review gap. Existing Brain documents take precedence,
 then existing root-level documents, then new Brain paths. Only manifest and a truthful inventory

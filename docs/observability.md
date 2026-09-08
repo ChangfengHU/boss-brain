@@ -1,8 +1,8 @@
 # Context observability
 
-After `boss init`, protocol v2 emits multi-project selection traces. The receipt repair in
-source reconnects user-visible feedback without reverting multi-project context. This source
-repair is not yet promoted to the shared installed runtime; that runtime still lacks v2 receipts.
+After `boss init`, protocol v2 emits multi-project selection traces. The receipt repair
+reconnects user-visible feedback without reverting multi-project context. It is installed and
+entrypoint-verified on the development host; this does not imply fleet-wide deployment.
 Use `boss explain --session ID --json`/`--show` for project sets, task and bounded context.
 
 Boss records routing decisions per session so an incorrect decision is observable even when no context was injected. The trace is append-only JSONL under the Boss runtime state and contains redacted metadata, never the original prompt or secret values.
@@ -54,6 +54,8 @@ The Codex hook protocol supplies instructions rather than a native status compon
 `last_context.receipt` records the policy and whether the current output requests a receipt.
 `injection` describes context-body delivery, while `chars` and `sha256` describe the Hook's
 constructed output including any receipt. Observe-only mode still suppresses host delivery.
+`startup_unavailable` identifies failed local patrol/machine services independently of
+project metadata failures. These failures must not erase otherwise healthy context.
 
 ## Session controls
 

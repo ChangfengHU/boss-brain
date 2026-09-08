@@ -2,16 +2,17 @@
 
 ## Current state
 
-The user chose forward compatibility, not rollback. Source receipt repair `9946caf`
-passed isolated acceptance and has NOT replaced the shared installed runtime. Do not
-claim that existing sessions already display the repaired receipt. The compatibility
-checklist in `docs/requirements-preservation-audit.md` tracks remaining release gates.
+The user chose forward compatibility, not rollback. `4f2e368` installed the receipt
+repair and restored v2 startup services on this host. Version is
+`0.1.0+codex.20260908023646`; source/cache equality and six installed/retired
+prompt and Stop entrypoints passed. The compatibility checklist in
+`docs/requirements-preservation-audit.md` tracks evidence and remaining boundaries.
 
 Preservation repair `9aa7f9d` supersedes the earlier broad v2 acceptance claim.
 The twelve original user rules are restored verbatim in installed global directives.
 Twelve audited implementation/compatibility findings were addressed; see
-`docs/requirements-preservation-audit.md` for exact evidence and un-restored legacy
-receipt/patrol behavior. Do not call all legacy behavior fully preserved.
+`docs/requirements-preservation-audit.md` for exact evidence, later receipt/startup
+repairs and remaining behavior differences. Do not claim universal semantic parity.
 
 Continuity protocol v2 is implemented and installed on the development host. The
 Codex native plugin and global directives are configured; legacy fallback Codex
@@ -20,6 +21,12 @@ has not been accepted. Use `boss init --dry-run` to inspect other adopted projec
 this upgrade did not bulk-modify their documentation or business services.
 
 ## Verified behavior
+
+- `4f2e368`: 122 deterministic tests passed. Added v2 daily-patrol/local-machine
+  initialization checks and replayed four original Stop remediation journeys with
+  v2 work bindings. Native Codex receipt/rules/multi-project/knowledge acceptance
+  passed. Installation preserved both global directives, registry and config
+  byte-for-byte; six actual new/retired prompt and Stop entrypoints passed.
 
 - `9946caf`: 115 deterministic tests passed, including seven v2 receipt tests.
   Final source passed native Codex visible-receipt, original-rule, long-context,
@@ -44,10 +51,11 @@ this upgrade did not bulk-modify their documentation or business services.
 
 ## Next action
 
-Review a controlled promotion of the accepted source receipt repair that
-preserves live Hook entrypoints. Do not automatically reinstall as a side effect
-of answering plugin questions. Startup patrol/machine initialization and broader
-compatibility acceptance remain open; do not represent receipts alone as full parity.
+Receipt/startup promotion is complete on this host. Keep the existing `changes`
+receipt policy; it reports the first route and later routing/guidance changes, not
+every identical prompt. New threads pick up the new plugin catalog; old executable
+entrypoints were preserved and verified. Do not reinstall merely to answer questions.
+Further fleet rollout and real platform acceptance require their own scope.
 
 Task scope corrections use `session bind --replace-projects` with the full revised
 list and access level. Inspect per-project failures in initialization results or

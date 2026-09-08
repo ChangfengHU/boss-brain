@@ -38,3 +38,17 @@ receipt when the body is unchanged, while `off` and observe-only must suppress i
 Task projects and reference candidates must not be presented as the same ownership
 class. Reserve space within the bounded context rather than allowing the receipt
 to be silently truncated. A strict user output format still takes precedence.
+
+## Verify the promoted runtime, not only source
+
+`4f2e368` replays the original guarded/strict remediation journeys through real v2
+work bindings. Use a synthetic GitHub identity and a separate local bare upstream
+so push/record checks run end-to-end without writing a real remote repository.
+Local startup patrol and machine initialization must not imply project work claims.
+
+After an installer promotion, compare protected global directive, registry and
+configuration bytes. Run `python3 -m tests.installed_hooks_e2e` to compare actual
+source/distribution/cache files and invoke each retained prompt and Stop entrypoint
+with disposable routing state. Merely seeing "installed" or preserving an old path
+does not prove that the old session executes the repaired behavior. Six entries
+passed this promotion, and protected-file hashes stayed identical.

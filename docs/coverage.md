@@ -7,7 +7,10 @@ Passing test counts are not a product-completeness claim. A capability is called
 The historical rows below include legacy-mode tests; they must not be read as blanket v2
 acceptance. See the [requirement-by-requirement migration audit](requirements-preservation-audit.md)
 and `tests/test_v2_preservation.py` for the enabled-v2 preservation evidence, repaired
-regressions, and remaining receipt/patrol differences. Durable cross-session knowledge is
+regressions, and explicit remaining boundaries. `test_v2_startup.py` and
+`test_v2_stop_journeys.py` now cover the restored startup services and the four original
+Stop remediation journeys under v2 work bindings. Native receipt rendering and actual
+installed/retired entrypoints have separate acceptance probes. Durable cross-session knowledge is
 implemented in v2; the first row's session-only limitation describes legacy mode.
 
 | Product behavior | Status | Automated evidence | Remaining boundary |
