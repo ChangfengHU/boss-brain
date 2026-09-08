@@ -20,7 +20,7 @@ def main():
     source = ROOT / 'plugins/boss-brain'
     version = json.loads((source / '.codex-plugin/plugin.json').read_text())['version']
     cache_root = live / '.codex/plugins/cache/boss-brain/boss-brain'
-    for relative in ('scripts/boss.py', 'scripts/continuity.py', 'hooks/hooks.json',
+    for relative in ('scripts/boss.py', 'scripts/continuity.py', 'scripts/observability.py', 'hooks/hooks.json',
                      'assets/global-directives.md', 'assets/legacy-directives.md', 'skills/boss-brain/SKILL.md',
                      'assets/help.md', 'assets/help-topics.json'):
         expected = (source / relative).read_bytes()
@@ -66,8 +66,13 @@ def main():
         result = run(stable, 'hook', 'prompt-submit', payload={'session_id': 'off-probe', 'cwd': str(root), 'prompt': '只读查看'})
         assert '用户可见上下文回执' not in result, 'installed project receipt override ignored'
         assert run(stable, 'receipt').strip() == 'always', 'project override changed global policy'
+        run(stable, 'display', 'detail', '--session', 'visible-probe')
+        visible = json.loads(run(stable, 'hook', 'prompt-submit', payload={'session_id': 'visible-probe', 'cwd': str(root), 'prompt': '只读查看'}))
+        assert 'systemMessage' in visible, 'installed display message missing'
+        recorded = run(stable, 'events', '--session', 'visible-probe', '--detail')
+        assert '实际 Hook 上下文正文' in recorded and 'fixture' in recorded, 'installed direct viewer missing'
         assert not (root / '.brain').exists(), 'probe created project memory'
-    print(f'PASS installed source/cache equality, original rules, help, project receipt and {len(versions)} live/retired prompt+Stop entrypoints')
+    print(f'PASS installed source/cache equality, original rules, help, project receipt/display/viewer and {len(versions)} live/retired prompt+Stop entrypoints')
 
 
 if __name__ == '__main__':

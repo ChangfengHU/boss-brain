@@ -3017,7 +3017,9 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
                              'unavailable_projects': sorted(unavailable),
                              'truncated_sections': shortened, 'sections': context_sections('multi-project', text),
                              'retrieval_sources': [{**source, 'budget_truncated': source['section'] in shortened,
-                                                    'reinjected': not repeated} for source in retrieval_sources],
+                                                    'delivery': 'suppressed-duplicate' if repeated else
+                                                    'partial-or-omitted-by-budget' if source['section'] in shortened else
+                                                    'included'} for source in retrieval_sources],
                              **routing,
                              'chars': len(output), 'sha256': continuity.digest(output),
                              'receipt': {'policy': config()['receipt'], 'required': bool(receipt),
