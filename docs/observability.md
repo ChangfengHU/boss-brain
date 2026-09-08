@@ -1,8 +1,9 @@
 # Context observability
 
-After `boss init`, protocol v2 emits multi-project selection traces instead of single-project
-switch receipts. Use `boss explain --session ID --json`/`--show` for project sets, task, fingerprint
-and bounded context. The routing/receipt modes below document the retained legacy path.
+After `boss init`, protocol v2 emits multi-project selection traces. The receipt repair in
+source reconnects user-visible feedback without reverting multi-project context. This source
+repair is not yet promoted to the shared installed runtime; that runtime still lacks v2 receipts.
+Use `boss explain --session ID --json`/`--show` for project sets, task and bounded context.
 
 Boss records routing decisions per session so an incorrect decision is observable even when no context was injected. The trace is append-only JSONL under the Boss runtime state and contains redacted metadata, never the original prompt or secret values.
 
@@ -25,11 +26,22 @@ Each session owns `traces/<session>.jsonl` and `previews/<session>.txt`. The com
 
 `boss receipt` controls automatic receipts:
 
-- `changes` (default): show project/task routing changes, drift warnings, and selected Wiki/convention context; keep ordinary workspace startup silent.
-- `always`: also show stable workspace and roster context.
+- `changes` (default in repaired v2): show the first user-prompt route, then changes to project/task routing, drift warnings or selected Wiki/convention guidance. SessionStart alone does not consume a visible receipt.
+- `always`: request a receipt on every user prompt even if the context body is deduplicated.
 - `off`: never request an automatic receipt; trace recording remains enabled.
 
-Receipts contain project/task names and selected section labels only. They must not contain filesystem paths, raw injected context, prompts, or credentials. Examples:
+V2 distinguishes task projects from read-only reference candidates. Without a bound task it
+labels the workspace or explicit reference instead of inventing task ownership. Selection
+does not grant write authority. Strict user output formats and explicit no-extra-text requests
+take precedence. The retained legacy path uses its original mode-based receipt policy.
+
+Receipts contain project/task names and selected section labels only. They must not contain filesystem paths, raw injected context, prompts, or credentials. V2 example:
+
+```text
+↳ Boss：任务项目 workflow；参考项目 browser · PUBLISH
+```
+
+Legacy examples:
 
 ```text
 ⚠ Boss：疑似涉及项目 llm-wiki，未切换、未加载其正文
@@ -38,6 +50,10 @@ Receipts contain project/task names and selected section labels only. They must 
 ```
 
 The Codex hook protocol supplies instructions rather than a native status component, so receipt rendering depends on the agent following the injected receipt instruction. Real-Codex acceptance tests verify this behavior; the per-session trace remains the authoritative record.
+
+`last_context.receipt` records the policy and whether the current output requests a receipt.
+`injection` describes context-body delivery, while `chars` and `sha256` describe the Hook's
+constructed output including any receipt. Observe-only mode still suppresses host delivery.
 
 ## Session controls
 

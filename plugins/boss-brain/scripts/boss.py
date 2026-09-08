@@ -2760,6 +2760,46 @@ def pack_multi_context(parts, sections, budget):
     return text, shortened
 
 
+def multi_context_receipt(value, selected, confirmed, workspace, explicit, routing, sections, event, sid):
+    """Report routing separately from context-body deduplication and write authority."""
+    primary = confirmed or workspace or explicit
+
+    def names(paths):
+        rows = sorted(r['name'] for r in selected if r['path'] in paths)
+        return '、'.join(name[:60] for name in rows[:4]) + ('等' if len(rows) > 4 else '')
+
+    current = names(primary)
+    reference = names({r['path'] for r in selected} - primary)
+    label = '任务项目' if confirmed else '工作目录项目' if workspace else '引用项目'
+    message = f'↳ Boss：{label} {current}' if current else '↳ Boss：未识别具体项目'
+    if reference:
+        message += '；参考项目 ' + reference
+    if value.get('focus_task'):
+        message += ' · ' + str(value['focus_task'])[:80]
+    guidance = [(name, continuity.digest(body)) for name, body in sections if ':state' not in name]
+    kinds = [kind for kind in ('wiki', 'convention') if any(kind in name for name, _ in guidance)]
+    if kinds:
+        message += ' · 相关知识 ' + ','.join(kinds)
+    if routing.get('drift_task') or routing.get('goal_transition'):
+        message += ' · 检测到目标偏离，未切换'
+    if routing.get('suppression_reason'):
+        message += ' · 任务选择未生效'
+    message = redact_secrets(message)
+    # Include full identities so long/truncated labels cannot hide scope changes.
+    signature = continuity.digest(json.dumps({'projects': sorted(r['path'] for r in selected),
+        'primary': sorted(primary), 'task': value.get('focus_task'), 'guidance': guidance,
+        'message': message}, sort_keys=True))
+    policy = config()['receipt']
+    required = (event == 'UserPromptSubmit' and session_mode(sid) == 'enabled'
+                and policy != 'off' and (policy == 'always' or value.get('last_multi_receipt') != signature))
+    if not required:
+        return ''
+    value['last_multi_receipt'] = signature
+    return ('\n[Boss Brain 用户可见上下文回执要求；仅适用于本轮]\n'
+            '此简短路由回执不包含内部正文，也不授予项目写权限。若用户要求严格输出格式或不附加说明，遵循用户要求；否则在本轮最终答复末尾原样附加这一行：'
+            + message)
+
+
 def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     sid = str(payload.get('session_id') or 'nosid')
     prompt = str(payload.get('prompt') or '')
@@ -2841,10 +2881,12 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
     # Initialization runs in the Agent's confirmed work binding, never from a
     # lexical prompt match. A question about "fixing" does not authorize writes.
     budget = bounded_int(config().get('continuity', {}).get('context_chars'), 10000, 2000, 20000)
-    text, shortened = pack_multi_context(parts, optional_sections, budget)
-    fingerprint = continuity.digest(text)
     value = load_session(sid)
+    receipt = multi_context_receipt(value, selected, confirmed, workspace, explicit, routing, optional_sections, event, sid)
+    text, shortened = pack_multi_context(parts, optional_sections, budget - len(receipt))
+    fingerprint = continuity.digest(text)
     repeated = value.get('last_multi_digest') == fingerprint and event != 'SessionStart'
+    output = ('' if repeated else text) + receipt
     value['last_multi_digest'] = fingerprint
     value['context_projects'] = [r['path'] for r in selected]
     value['last_context'] = {'schema': 3, 'session': sid, 'mode': 'multi-project', 'event': event,
@@ -2853,15 +2895,16 @@ def hook_multi_context(payload: dict[str, Any], event: str) -> int:
                              'unavailable_projects': sorted(unavailable),
                              'truncated_sections': shortened, 'sections': context_sections('multi-project', text),
                              **routing,
-                             'chars': 0 if repeated else len(text), 'sha256': fingerprint,
+                             'chars': len(output), 'sha256': continuity.digest(output),
+                             'receipt': {'policy': config()['receipt'], 'required': bool(receipt)},
                              'injection': {'performed': not repeated, 'reason': 'duplicate' if repeated else 'relevant-projects'}}
     save_session(sid, value)
     append_trace(sid, value['last_context'])
     write_json(state_home() / 'last-context.json', value['last_context'])
-    atomic_write(preview_file(sid), text + '\n')
-    atomic_write(state_home() / 'last-context-preview.txt', text + '\n')
-    if not repeated:
-        session_hook_output(sid, event, text)
+    atomic_write(preview_file(sid), text + receipt + '\n')
+    atomic_write(state_home() / 'last-context-preview.txt', text + receipt + '\n')
+    if output:
+        session_hook_output(sid, event, output)
     return 0
 
 

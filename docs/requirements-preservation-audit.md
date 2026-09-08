@@ -56,10 +56,13 @@ v2 and is not presented as a newly introduced code deletion.
 
 ## Differences not silently declared equivalent
 
-- Legacy automatic user-visible routing receipts are not emitted by v2. Its
-  private traces, drift notices and explicit `boss explain` remain available.
-  Restoring mandatory final-answer receipts needs reconciliation with the user's
-  core silence rule; this repair does not quietly reintroduce them.
+- The installed v2 runtime still lacks automatic user-visible routing receipts.
+  Following the user's compatibility correction, the current source reconnects
+  bounded receipts to the multi-project path without reverting v2. It preserves
+  off/changes/always policies, distinguishes task owners from reference projects,
+  and separates receipt delivery from body deduplication. See `tests/test_v2_receipts.py`
+  and `BOSS_TEST_RECEIPT=1` in the native Codex journey. Source acceptance is not
+  shared-runtime deployment; full legacy parity is still not claimed.
 - Legacy SessionStart called patrol and automatic machine-Brain initialization.
   v2 registers the current qualified workspace, while explicit scan/machine CLI
   workflows remain. Full-home automatic patrol/machine initialization is not
@@ -80,3 +83,30 @@ reconstructed. Existing strict/data-loss checks are not blanket-disabled.
 Future migrations must review both clause preservation and enabled-path user
 journeys. Compare the actual installed rule text and Hook outputs, not merely
 function existence, template markers, process exit codes or aggregate test counts.
+
+## Compatibility release checklist
+
+This checklist separates existing evidence from remaining work. Passing the receipt repair
+does not close other rows. Preserve the old baseline `c5bf077` and the original twelve rules;
+do not delete new features or user data to make a comparison pass.
+
+| User-visible contract | Evidence / current disposition | Remaining release gate |
+| --- | --- | --- |
+| Original twelve global rules | `test_all_original_core_rules_survive_global_migration`; native rule retrieval | No guarantee of every future semantic decision |
+| Project identification feedback | `test_v2_receipts.py`; optional native visible-answer assertion | Shared installed runtime not updated |
+| Task switch and drift | Enabled-v2 preservation tests plus receipt task-switch test | Natural-language false positives remain possible |
+| Context, long state and Wiki/conventions | Enabled-v2 preservation and native long-marker journey | Bounded selective retrieval, not full-history loading |
+| Multiple task owners and corrected scope | `test_continuity_refinements.py`; native resume/correction | Agent must verify intended ownership |
+| Knowledge reminders and durable writeback | v2 cross-session tests; native decision persistence | Lexical candidates and changed bytes do not establish truth |
+| Development logs, push and Stop | Existing strict/guarded journeys; v2 baseline/task-link tests | Full strict remediation journey still needs explicit enabled-v2 replay |
+| Handoff and Wiki/convention checks | Existing CLI journeys plus v2 mapped-document checks | Actual takeover remains Agent-driven |
+| Session switches and isolation | New enabled-v2 receipt mode tests plus existing control journeys | Project-level switch was never implemented |
+| Missing Hook resources and old cache paths | Compatibility suite and prior retired-entry checks | Recheck installed entrypoints before any promotion |
+| Startup full-home patrol and machine initialization | Explicit commands retained; v2 startup bypass remains | Restore/validate lifecycle behavior; cannot declare equivalent |
+| Machine snapshot/restore | Existing explicit CLI journeys | Real timer longevity and reclaimed-host recovery not accepted |
+| Multiple-candidate retrieval | v2 intentionally retrieves more than old alias-only pointers | Documented behavior change, not identical legacy routing |
+| Claude / Windows / macOS | No real-host acceptance | Do not claim accepted support |
+
+The user's desired outcome is forward compatibility, not a forced choice between old and new
+features. A known behavioral gap must be tracked as an unresolved release gate, not renamed
+an optimization or silently accepted because it appears in this document.

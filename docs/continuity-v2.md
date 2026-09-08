@@ -69,8 +69,10 @@ bodies. Legacy state/topic limits remain; no extra 1,300/1,200-character whole-b
 Remaining candidate names are pointers. Content fingerprints suppress duplicates; SessionStart,
 resume and compact reinject even an unchanged fingerprint. Facts still need live verification.
 
-V2 trace data includes project sets, focused task, content digest and actual output size. It
-does not emit legacy single-project switch receipts. `boss explain --session ID --json` and
+V2 trace data includes project sets, focused task, context-body injection status, output digest
+and actual output size. The source now restores user-visible receipts adapted to multiple
+projects; see [receipt behavior and release boundary](observability.md). A receipt-only turn
+can have a duplicate body and nonzero output size. `boss explain --session ID --json` and
 `--show` expose diagnosis on explicit request. Missing/unsafe metadata degrades with a warning,
 not a fabricated successful load. Hooks remain local-only.
 

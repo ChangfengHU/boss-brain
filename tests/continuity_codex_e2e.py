@@ -125,6 +125,21 @@ def main():
         assert all(json.loads(line).get('item', {}).get('type') not in ('command_execution', 'mcp_tool_call')
                    for line in rule_events.splitlines()), 'core-rule test unexpectedly used tools'
         print('PASS real Codex: original core thinking/code rules retrieved from global instructions without tools', flush=True)
+        if os.environ.get('BOSS_TEST_RECEIPT') == '1':
+            # No output schema: assert the actual user-visible answer, not just Hook JSON.
+            run([*boss, 'receipt', 'always'])
+            receipt_answer = home / 'receipt-answer.txt'
+            receipt_events = run([codex, 'exec', 'resume', sid, '--disable', 'apps',
+                                  '--dangerously-bypass-hook-trust', '--skip-git-repo-check',
+                                  '-c', 'mcp_servers={}', '--json', '--output-last-message', str(receipt_answer),
+                                  '请只读简述当前任务，@browser-fixture 仅作参考。不调用工具，不读取文件。'],
+                                 cwd=projects[0], timeout=180)
+            answer = receipt_answer.read_text()
+            assert '↳ Boss：任务项目 workflow-fixture；参考项目 browser-fixture · PUBLISH' in answer, 'visible routing receipt missing'
+            assert str(home) not in answer, 'receipt answer exposed fixture paths'
+            assert all(json.loads(line).get('item', {}).get('type') not in ('command_execution', 'mcp_tool_call')
+                       for line in receipt_events.splitlines()), 'receipt test unexpectedly used tools'
+            print('PASS real Codex: visible v2 receipt distinguishes task and reference projects', flush=True)
         if os.environ.get('BOSS_TEST_KNOWLEDGE') == '1':
             # A separately authorized disposable write fixture; never push its fake origin.
             instruction = (

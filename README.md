@@ -57,7 +57,16 @@ The installer preserves existing `~/.boss/`, project `.brain/` directories, and 
 
 ## Everyday behavior
 
-On session start, Boss performs a daily local patrol and silently registers repositories that are non-empty, recently active, owned by the GitHub account in `~/.boss/owner`, and not name-conflicting. It also initializes the local machine Brain once. Registration does not create an empty project `.brain/`; new project brains grow only from verified information.
+In legacy mode, session start performs a daily local patrol and initializes the local machine
+Brain once. Enabled v2 currently registers the qualified current workspace instead; full-home
+startup patrol and automatic machine initialization remain migration gaps, not equivalent
+behavior. Explicit scan/machine commands remain available. Discovery alone does not create a
+project `.brain/`; authorized v2 work bindings initialize basic entries.
+
+The source receipt repair restores visible v2 project/task feedback; it has not yet been
+promoted to the shared installed runtime. See [observability](docs/observability.md) for
+`changes`/`always`/`off` behavior and [compatibility audit](docs/requirements-preservation-audit.md)
+for remaining release gates.
 
 Useful explicit commands:
 
@@ -116,7 +125,11 @@ CODEX_AUTH_SOURCE=/secure/path/auth.json python3 tests/continuity_codex_e2e.py
 
 See [testing strategy](docs/testing.md) and the [capability-to-test coverage map](docs/coverage.md) for explicit evidence and remaining boundaries.
 
-Critical architecture/operating corrections now produce session-scoped knowledge reviews, even without a business commit. Verified tool discoveries use an explicit flag; existing project documents are updated only within user authorization. See [knowledge synchronization](docs/knowledge-sync.md) for commands, no-write behavior, and verification limits.
+Critical architecture/operating corrections can produce knowledge reviews even without a
+business commit: legacy reviews are session-scoped; v2 additionally stores project-owned
+reviews across sessions. Verified tool discoveries use an explicit flag; existing project
+documents are updated only within user authorization. See [knowledge synchronization](docs/knowledge-sync.md)
+for commands, no-write behavior, and verification limits.
 
 ## Uninstall and rollback
 
